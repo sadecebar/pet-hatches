@@ -159,7 +159,8 @@ def resolve_pet(pg, key, row_idx, avatar):
                 cands.append(c)
         except Exception as e:
             print("  pic scan failed in", where, str(e)[:80])
-    cands = [c for c in cands if c["src"] and c["src"] != avatar and "headshot" not in c["src"].lower()]
+    cands = [c for c in cands if c["src"] and c["src"] != avatar and "headshot" not in c["src"].lower()
+             and "/assets/game/ui/" not in c["src"]]  # ui/ = rarity stars & badges, never the pet
     cands.sort(key=lambda c: (c["where"] != "popup", -c["w"] * c["h"]))
     print(f"pet candidates for {key}: " + json.dumps(
         [{k: (v[:100] if isinstance(v, str) else v) for k, v in c.items()} for c in cands])[:1500])
@@ -173,6 +174,15 @@ def resolve_pet(pg, key, row_idx, avatar):
         url = urljoin(BASE, c["src"])
         if check_image(url):
             return url, None
+        # link blocked for outsiders (e.g. img.php?a=... -> 403): screenshot THIS picture
+        # rather than falling through to a smaller, wrong image
+        try:
+            png = pg.locator(f'[data-hpet="{c["id"]}"]').first.screenshot(timeout=4000)
+            if png and len(png) > 800:
+                print("  link blocked, using screenshot of", c["where"], c["kind"], c["id"])
+                return None, png
+        except Exception as e:
+            print("  screenshot failed", c["id"], str(e)[:80])
     for c in cands:  # last resort: screenshot of the picture element
         try:
             png = pg.locator(f'[data-hpet="{c["id"]}"]').first.screenshot(timeout=4000)
