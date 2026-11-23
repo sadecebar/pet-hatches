@@ -29,6 +29,10 @@ USER_ID = os.environ.get("DISCORD_USER_ID", "").strip()
 SEEN = os.environ.get("HATCH_SEEN", "data/seen_hatches.json")
 MAX_SEND = 10
 PREVIEW = os.environ.get("PREVIEW", "").strip().lower() == "true"
+try:  # preview: how many DIFFERENT pets to send a test alert for
+    PREVIEW_COUNT = max(1, min(MAX_SEND, int(os.environ.get("PREVIEW_COUNT") or 1)))
+except ValueError:
+    PREVIEW_COUNT = 1
 KEEP = 500
 
 TITLE_RE = re.compile(r"^(?P<name>.+?)\s+#(?P<serial>[\d,]+)$")
@@ -227,6 +231,17 @@ def parse_modal(m):
 
 
 # ------------------------------------------------------------------ scraping
+def preview_rows(rows):
+    """Newest hatch of each different pet name, up to PREVIEW_COUNT."""
+    out, names = [], set()
+    for r in rows:
+        if r["name"] not in names:
+            names.add(r["name"])
+            out.append(r)
+        if len(out) >= PREVIEW_COUNT:
+            break
+    return out
+
 def scrape(seen):
     """Returns (all_rows, details_for_new) where details is {key: modal_dict}."""
     from playwright.sync_api import sync_playwright
@@ -248,7 +263,7 @@ def scrape(seen):
         pg.screenshot(path="data/last_hatches.png")
         details = {}
         if seen is not None or PREVIEW:
-            fresh = rows[:1] if PREVIEW else [r for r in rows if r["key"] not in seen][:MAX_SEND]
+            fresh = preview_rows(rows) if PREVIEW else [r for r in rows if r["key"] not in seen][:MAX_SEND]
             for r in reversed(fresh):  # oldest first
                 got = None
                 for how in ("dom", "force"):
@@ -438,15 +453,21 @@ def main():
         print("no hatch rows found - nothing changed", file=sys.stderr)
         return 1
     if PREVIEW:  # show how an alert looks using the newest hatch; changes no state
-        r = rows[0]
-        try:
-            print("discord status", post(f"{ping()}\U0001F9EA Preview of a hatch alert (your latest hatch):",
-                                         build_embed(r, details.get(r["key"])),
-                                         (details.get(r["key"]) or {}).get("pet_png")))
-        except Exception as e:
-            print("discord failed:", e, file=sys.stderr)
-            return 1
-        return 0
+        picks = preview_rows(rows)
+        print("preview pets:", [r["key"] for r in picks])
+        failed = 0
+        for i, r in enumerate(picks, 1):
+            m = details.get(r["key"]) or {}
+            print(f"preview {r['key']}: pet_url={m.get('pet_url')} png={'yes' if m.get('pet_png') else 'no'}")
+            try:
+                print("discord status", post(
+                    f"{ping()}\U0001F9EA Test alert {i}/{len(picks)}: **{r['name']}**",
+                    build_embed(r, details.get(r["key"])), m.get("pet_png")))
+            except Exception as e:
+                failed += 1
+                print("discord failed:", e, file=sys.stderr)
+            time.sleep(1.5)  # stay under Discord's webhook rate limit
+        return 1 if failed == len(picks) else 0
     current = [r["key"] for r in rows]
 
     if seen is None:  # first run: remember everything, no flood of pings

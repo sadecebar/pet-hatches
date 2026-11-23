@@ -9,6 +9,10 @@ on:
         description: "Send a sample hatch alert and stop"
         type: boolean
         default: false
+      preview_count:
+        description: "Preview: how many different pets to test (1-10)"
+        type: string
+        default: "1"
 
 permissions:
   contents: write
@@ -51,6 +55,7 @@ jobs:
           FLOWER_WEBHOOK_URL: ${{ secrets.FLOWER_WEBHOOK_URL }}
           DISCORD_USER_ID: ${{ secrets.DISCORD_USER_ID }}
           PREVIEW: ${{ inputs.preview }}
+          PREVIEW_COUNT: ${{ inputs.preview_count }}
       - name: Start the next run
         if: ${{ !cancelled() && inputs.preview != true && steps.gate.outputs.done != 'true' && steps.loop.outputs.done != 'true' }}
         env:
