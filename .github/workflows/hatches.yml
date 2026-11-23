@@ -3,7 +3,12 @@ name: hatch-tracker
 on:
   schedule:
     - cron: "*/5 * * * *"   # as often as GitHub allows (often a few minutes late)
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      preview:
+        description: "Send a sample alert using my latest hatch"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -28,6 +33,7 @@ jobs:
           HATCH_QUERY: ${{ secrets.HATCH_QUERY }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           DISCORD_USER_ID: ${{ secrets.DISCORD_USER_ID }}
+          PREVIEW: ${{ inputs.preview }}
       - name: Save seen hatches
         if: always()
         run: |
