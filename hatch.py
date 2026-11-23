@@ -121,6 +121,17 @@ PICS_JS = r"""(sel) => {
 }"""
 
 
+# Copies an already-loaded <img> out of the page as a transparent PNG
+# (same-origin, so the canvas is not tainted). Works even when the link is 403 for us.
+CANVAS_JS = r"""(id) => {
+  const i = document.querySelector(`[data-hpet="${id}"]`);
+  if (!i || i.tagName !== 'IMG' || !i.complete || !i.naturalWidth) return null;
+  const c = document.createElement('canvas');
+  c.width = i.naturalWidth; c.height = i.naturalHeight;
+  c.getContext('2d').drawImage(i, 0, 0);
+  try { return c.toDataURL('image/png'); } catch (e) { return 'ERR ' + e; }
+}"""
+
 def check_image(url):
     """Can Discord show this picture? (fetched from the runner itself)"""
     try:
@@ -174,8 +185,17 @@ def resolve_pet(pg, key, row_idx, avatar):
         url = urljoin(BASE, c["src"])
         if check_image(url):
             return url, None
-        # link blocked for outsiders (e.g. img.php?a=... -> 403): screenshot THIS picture
-        # rather than falling through to a smaller, wrong image
+        # link blocked for outsiders (e.g. img.php?a=... -> 403): copy THIS picture out of
+        # the page (transparent PNG), else screenshot it - never fall through to a wrong image
+        try:
+            got = pg.evaluate(CANVAS_JS, c["id"])
+            raw = data_uri_bytes(got or "")
+            if raw:
+                print(f"  link blocked, copied picture from page {c['id']} ({len(raw)}B)")
+                return None, raw
+            print("  canvas copy failed:", (got or "not loaded")[:80])
+        except Exception as e:
+            print("  canvas copy failed:", str(e)[:80])
         try:
             png = pg.locator(f'[data-hpet="{c["id"]}"]').first.screenshot(timeout=4000)
             if png and len(png) > 800:
