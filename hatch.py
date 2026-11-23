@@ -45,20 +45,28 @@ ROWS_JS = r"""() => {
     const idx = out.length;
     t.setAttribute('data-htitle', idx);
     out.push({idx, title: t.textContent.trim(), text: p.innerText,
-      imgs: [...p.querySelectorAll('img')].map(i => ({src: i.currentSrc || i.src,
-        w: i.naturalWidth || i.width || 0, h: i.naturalHeight || i.height || 0}))});
+      imgs: [...p.querySelectorAll('img')].map(i => { const b = i.getBoundingClientRect();
+        return {src: i.currentSrc || i.src, w: Math.round(b.width), h: Math.round(b.height)}; })});
   });
   return out;
 }"""
 
 MODAL_JS = r"""() => {
-  const h = [...document.querySelectorAll('body *')].find(e =>
-    e.children.length === 0 && /^[\w ]{0,20}hatch$/i.test((e.textContent || '').trim()));
-  if (!h) return null;
-  let box = h.closest('[role=dialog],dialog,[aria-modal=true]');
-  if (!box) { box = h; for (let i = 0; i < 4 && box.parentElement; i++) box = box.parentElement; }
-  const imgs = [...box.querySelectorAll('img')].map(i => ({src: i.currentSrc || i.src,
-    w: i.naturalWidth || i.width || 0, h: i.naturalHeight || i.height || 0}));
+  const lab = [...document.querySelectorAll('body *')].find(e =>
+    e.children.length === 0 && /^Hatched from$/i.test((e.textContent || '').trim()));
+  if (!lab) return null;
+  const sz = i => { const b = i.getBoundingClientRect();
+    return {src: i.currentSrc || i.src, w: Math.round(b.width), h: Math.round(b.height)}; };
+  let box = lab.closest('[role=dialog],dialog,[aria-modal=true]');
+  if (!box) {
+    box = lab;
+    for (let n = 0; n < 12 && box.parentElement; n++) {
+      box = box.parentElement;
+      const t = box.innerText || '';
+      if (/Serial/.test(t) && /Total Eggs/i.test(t) && box.querySelectorAll('img').length >= 2) break;
+    }
+  }
+  const imgs = [...box.querySelectorAll('img')].map(sz);
   let avatar = null;
   const at = [...box.querySelectorAll('*')].find(e =>
     e.children.length === 0 && /^@\S+$/.test((e.textContent || '').trim()));
@@ -143,21 +151,36 @@ def scrape(seen):
         if seen is not None or PREVIEW:
             fresh = rows[:1] if PREVIEW else [r for r in rows if r["key"] not in seen][:MAX_SEND]
             for r in reversed(fresh):  # oldest first
-                try:
-                    pg.locator(f'[data-htitle="{r["idx"]}"]').first.evaluate("e => e.click()")
-                    pg.wait_for_timeout(1500)
-                    mod = pg.evaluate(MODAL_JS)
-                    if mod:
-                        details[r["key"]] = parse_modal(mod)
-                        if len(details) == 1:
-                            print("--- first modal text ---")
-                            print(mod["text"][:600])
-                    else:
-                        print("modal not found for", r["key"])
+                got = None
+                for how in ("dom", "force"):
+                    try:
+                        loc = pg.locator(f'[data-htitle="{r["idx"]}"]').first
+                        if how == "dom":
+                            loc.evaluate("e => e.click()")
+                        else:
+                            loc.click(timeout=3000, force=True)
+                        pg.wait_for_selector("text=Hatched from", timeout=4000)
+                        got = pg.evaluate(MODAL_JS)
+                    except Exception as e:
+                        print(how, "popup attempt failed:", str(e).splitlines()[0][:100])
+                    if got:
+                        print("popup opened via", how)
+                        break
                     pg.keyboard.press("Escape")
                     pg.wait_for_timeout(500)
-                except Exception as e:
-                    print("modal failed for", r["key"], str(e).splitlines()[0][:120])
+                if got:
+                    details[r["key"]] = parse_modal(got)
+                    if len(details) == 1:
+                        print("--- first popup text ---")
+                        print(got["text"][:600])
+                        print("popup images:", json.dumps(got["imgs"])[:300], "avatar:", got.get("avatar"))
+                else:
+                    print("no popup details for", r["key"])
+                try:
+                    pg.keyboard.press("Escape")
+                    pg.wait_for_timeout(500)
+                except Exception:
+                    pass
         b.close()
     return rows, details
 
@@ -186,7 +209,7 @@ def build_embed(r, m):
     add("Serial", f"#{r['serial']}")
     add("Value", m.get("value"))
     add("Total eggs", m.get("eggs"))
-    add("When", (m.get("when") + " (Stockholm)") if m.get("when") else r["ago"] + " ago")
+    add("When", (m.get("when") + " (Stockholm)") if m.get("when") else r["ago"])
     emb = {"title": f"\U0001F389 {r['name']} #{r['serial']}",
            "description": f"**{who}** hatched a **{r['name']}**!",
            "color": COLORS.get(rarity.lower(), 0x5865F2), "fields": fields,
