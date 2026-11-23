@@ -52,7 +52,7 @@ jobs:
           DISCORD_USER_ID: ${{ secrets.DISCORD_USER_ID }}
           PREVIEW: ${{ inputs.preview }}
       - name: Start the next run
-        if: ${{ always() && inputs.preview != true && steps.gate.outputs.done != 'true' && steps.loop.outputs.done != 'true' }}
+        if: ${{ !cancelled() && inputs.preview != true && steps.gate.outputs.done != 'true' && steps.loop.outputs.done != 'true' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh workflow run "${{ github.workflow }}" --ref "${{ github.ref_name }}"
