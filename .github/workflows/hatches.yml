@@ -1,8 +1,14 @@
 name: hatch-tracker
 
+
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/hatches.yml"
   schedule:
-    - cron: "*/5 * * * *"   # as often as GitHub allows (often a few minutes late)
+    - cron: "*/5 * * * *"
   workflow_dispatch:
     inputs:
       preview:
