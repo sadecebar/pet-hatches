@@ -16,6 +16,8 @@ import re
 import sys
 import time
 import urllib.request
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from urllib.parse import quote, urljoin
 
 BASE = "https://petsuniverse.org"
@@ -186,41 +188,96 @@ def scrape(seen):
 
 
 # ------------------------------------------------------------------ discord
+MONTHS = {m: i for i, m in enumerate(
+    ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"], 1)}
+UA = "Mozilla/5.0 (compatible; pu-hatches/1.0)"
+_HEADSHOTS = {}
+
+
+def hatch_time(when):
+    """'22 Nov 2026, 19:43' (Stockholm) -> ISO UTC string, or None."""
+    m = re.search(r"(\d{1,2})\s+([A-Za-z]{3})[a-z]*\s+(\d{4})\D+(\d{1,2}):(\d{2})", when or "")
+    if not m or m.group(2).lower() not in MONTHS:
+        return None
+    d, mon, y, h, mi = m.groups()
+    dt = datetime(int(y), MONTHS[mon.lower()], int(d), int(h), int(mi), tzinfo=ZoneInfo("Europe/Stockholm"))
+    return dt.astimezone(timezone.utc).isoformat()
+
+
+def roblox_headshot(username):
+    """Public Roblox API: username -> user id -> headshot image URL."""
+    if not username:
+        return None
+    if username in _HEADSHOTS:
+        return _HEADSHOTS[username]
+    url = None
+    try:
+        req = urllib.request.Request(
+            "https://users.roblox.com/v1/usernames/users",
+            data=json.dumps({"usernames": [username], "excludeBannedUsers": False}).encode(),
+            headers={"Content-Type": "application/json", "User-Agent": UA})
+        with urllib.request.urlopen(req, timeout=15) as r:
+            uid = json.load(r)["data"][0]["id"]
+        req = urllib.request.Request(
+            f"https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds={uid}"
+            "&size=150x150&format=Png&isCircular=false", headers={"User-Agent": UA})
+        with urllib.request.urlopen(req, timeout=15) as r:
+            url = json.load(r)["data"][0].get("imageUrl")
+    except Exception as e:
+        print("roblox headshot failed for", username, str(e)[:100])
+    _HEADSHOTS[username] = url
+    return url
+
+
+def abbr(text):
+    """'40,217,145' -> '40.2M' (non-numeric text is returned unchanged)."""
+    t = (text or "").replace(",", "").strip()
+    if not re.fullmatch(r"\d+(?:\.\d+)?", t):
+        return text
+    v = float(t)
+    for div, suf in ((1e12, "T"), (1e9, "B"), (1e6, "M"), (1e3, "K")):
+        if v >= div:
+            x = v / div
+            return (f"{x:.1f}".rstrip("0").rstrip(".") if x < 100 else f"{x:.0f}") + suf
+    return t
+
+
 def build_embed(r, m):
     m = m or {}
     who = m.get("display") or r["acct"] or "?"
-    user = f" (@{m['username']})" if m.get("username") else ""
+    user = m.get("username", "")
     blob = " ".join(r["extras"])
     rarity = next((e for e in r["extras"] if e.lower() in COLORS), "")
     mo = re.search(r"1/[\d,]+", blob)
     odds = mo.group(0) if mo else ""
     ml = re.search(r"\d+(?:\.\d+)?x luck", blob, re.I)
     luck = ml.group(0) if ml else ""
-    fields = []
-
-    def add(name, value, inline=True):
-        if value:
-            fields.append({"name": name, "value": str(value), "inline": inline})
-
-    add("Rarity", rarity or ("Rare" if not odds else ""))
-    add("Odds", odds)
-    add("Luck", luck)
-    add("Egg", m.get("hatched_from") or r["egg"])
-    add("Serial", f"#{r['serial']}")
-    add("Value", m.get("value"))
-    add("Total eggs", m.get("eggs"))
-    add("When", (m.get("when") + " (Stockholm)") if m.get("when") else r["ago"])
-    emb = {"title": f"\U0001F389 {r['name']} #{r['serial']}",
-           "description": f"**{who}** hatched a **{r['name']}**!",
-           "color": COLORS.get(rarity.lower(), 0x5865F2), "fields": fields,
-           "footer": {"text": "Pets Universe • Hatches"}}
-    author = {"name": f"{who}{user}"}
-    if m.get("avatar"):
-        author["icon_url"] = m["avatar"]
-    emb["author"] = author
-    icon = m.get("pet_icon") or r["icon"]
+    egg = m.get("hatched_from") or r["egg"]
+    head = f"{rarity} " if rarity else ""
+    lines = [f"**{who} hatched a {head}{r['name']}!**", ""]
+    if egg:
+        lines.append(f"\U0001F95A **Egg:** `{egg}`")
+    lines.append(f"\u2B50 **Serial:** `#{r['serial']}`")
+    if m.get("value"):
+        lines.append(f"\U0001F48E **Value:** `{abbr(m['value'])}`")
+    if odds:
+        lines.append(f"\U0001F3B2 **Odds:** `1/{abbr(odds[2:])}`" + (f"  \u00B7  **Luck:** `{luck.split('x')[0]}x`" if luck else ""))
+    elif luck:
+        lines.append(f"\U0001F340 **Luck:** `{luck.split('x')[0]}x`")
+    if m.get("eggs"):
+        lines += ["", "\U0001F4D8 **Player's Stats:**", "Total Eggs Opened:", f"`{abbr(m['eggs'])}`"]
+    emb = {"description": "\n".join(lines),
+           "color": COLORS.get(rarity.lower(), 0x5865F2),
+           "footer": {"text": "Pets Universe \u2022 Hatches"},
+           "timestamp": hatch_time(m.get("when")) or datetime.now(timezone.utc).isoformat()}
+    author = {"name": f"{who} (@{user})" if user else who}
+    icon = roblox_headshot(user) or m.get("avatar")
     if icon:
-        emb["thumbnail"] = {"url": icon}
+        author["icon_url"] = icon
+    emb["author"] = author
+    pet = m.get("pet_icon") or r["icon"]
+    if pet:
+        emb["thumbnail"] = {"url": pet}
     return emb
 
 
