@@ -24,6 +24,7 @@ WEBHOOK = os.environ.get("HATCH_WEBHOOK_URL") or os.environ.get("DISCORD_WEBHOOK
 USER_ID = os.environ.get("DISCORD_USER_ID", "").strip()
 SEEN = os.environ.get("HATCH_SEEN", "data/seen_hatches.json")
 MAX_SEND = 10
+PREVIEW = os.environ.get("PREVIEW", "").strip().lower() == "true"
 KEEP = 500
 
 TITLE_RE = re.compile(r"^(?P<name>.+?)\s+#(?P<serial>[\d,]+)$")
@@ -139,8 +140,8 @@ def scrape(seen):
             print("\n".join(pg.inner_text("body").splitlines()[:40]))
         pg.screenshot(path="data/last_hatches.png")
         details = {}
-        if seen is not None:
-            fresh = [r for r in rows if r["key"] not in seen][:MAX_SEND]
+        if seen is not None or PREVIEW:
+            fresh = rows[:1] if PREVIEW else [r for r in rows if r["key"] not in seen][:MAX_SEND]
             for r in reversed(fresh):  # oldest first
                 try:
                     pg.locator(f'[data-htitle="{r["idx"]}"]').first.evaluate("e => e.click()")
@@ -242,6 +243,15 @@ def main():
     if not rows:
         print("no hatch rows found - nothing changed", file=sys.stderr)
         return 1
+    if PREVIEW:  # show how an alert looks using the newest hatch; changes no state
+        r = rows[0]
+        try:
+            print("discord status", post(f"{ping()}\U0001F9EA Preview of a hatch alert (your latest hatch):",
+                                         build_embed(r, details.get(r["key"]))))
+        except Exception as e:
+            print("discord failed:", e, file=sys.stderr)
+            return 1
+        return 0
     current = [r["key"] for r in rows]
 
     if seen is None:  # first run: remember everything, no flood of pings
