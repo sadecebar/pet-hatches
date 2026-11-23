@@ -1,0 +1,37 @@
+name: hatch-tracker
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"   # as often as GitHub allows (often a few minutes late)
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: hatch-tracker
+  cancel-in-progress: false
+
+jobs:
+  track:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install playwright && playwright install --with-deps chromium
+      - name: Check hatches
+        run: python hatch.py
+        env:
+          HATCH_QUERY: ${{ secrets.HATCH_QUERY }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          DISCORD_USER_ID: ${{ secrets.DISCORD_USER_ID }}
+      - name: Save seen hatches
+        if: always()
+        run: |
+          git config user.name "hatch-tracker"
+          git config user.email "hatch-tracker@users.noreply.github.com"
+          git add data/seen_hatches.json
+          git diff --cached --quiet || (git commit -m "seen" && git pull --rebase && git push)
