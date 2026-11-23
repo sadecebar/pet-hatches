@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 400" width="1280" height="400">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1a1033"/>
+      <stop offset="0.55" stop-color="#2b1250"/>
+      <stop offset="1" stop-color="#0f0a1f"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#ffd76a" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#ffd76a" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="egg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff4d6"/>
+      <stop offset="1" stop-color="#f2c46b"/>
+    </linearGradient>
+    <linearGradient id="egg2" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#e9d9ff"/>
+      <stop offset="1" stop-color="#a878f0"/>
+    </linearGradient>
+    <linearGradient id="title" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ffe9a8"/>
+      <stop offset="1" stop-color="#ffb86b"/>
+    </linearGradient>
+  </defs>
+  <rect width="1280" height="400" rx="28" fill="url(#bg)"/>
+
+  <!-- stars -->
+  <g fill="#ffffff" opacity="0.7">
+    <circle cx="80" cy="60" r="2"/><circle cx="210" cy="330" r="1.5"/><circle cx="520" cy="48" r="1.8"/>
+    <circle cx="640" cy="350" r="1.4"/><circle cx="760" cy="70" r="2"/><circle cx="1220" cy="340" r="1.6"/>
+    <circle cx="1180" cy="52" r="1.4"/><circle cx="420" cy="360" r="1.2"/><circle cx="40" cy="250" r="1.4"/>
+  </g>
+
+  <!-- text -->
+  <text x="80" y="170" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="84" font-weight="800" fill="url(#title)">Pet Hatches</text>
+  <text x="84" y="226" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="30" fill="#d9ccff">Every rare hatch, straight to Discord.</text>
+  <text x="84" y="268" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="30" fill="#d9ccff">Within a minute. No PC needed.</text>
+  <g font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="22" font-weight="700">
+    <rect x="84" y="300" width="132" height="40" rx="20" fill="#ffffff" fill-opacity="0.08" stroke="#ffd76a" stroke-opacity="0.6"/>
+    <text x="150" y="327" text-anchor="middle" fill="#ffd76a">Secret</text>
+    <rect x="228" y="300" width="156" height="40" rx="20" fill="#ffffff" fill-opacity="0.08" stroke="#c9a2ff" stroke-opacity="0.6"/>
+    <text x="306" y="327" text-anchor="middle" fill="#c9a2ff">Exclusive</text>
+    <rect x="396" y="300" width="150" height="40" rx="20" fill="#ffffff" fill-opacity="0.08" stroke="#7fd4ff" stroke-opacity="0.6"/>
+    <text x="471" y="327" text-anchor="middle" fill="#7fd4ff">1 / 133M</text>
+  </g>
+
+  <!-- hatching egg -->
+  <circle cx="1000" cy="205" r="170" fill="url(#glow)"/>
+  <g transform="translate(1000 215)">
+    <!-- bottom shell -->
+    <path d="M-92 0 C-92 80 -50 120 0 120 C50 120 92 80 92 0 L66 -14 L44 8 L20 -18 L-4 6 L-28 -16 L-50 6 L-72 -14 Z" fill="url(#egg)"/>
+    <!-- top shell, popped off -->
+    <g transform="translate(-14 -78) rotate(-18)">
+      <path d="M-86 0 C-86 -80 -44 -120 0 -120 C44 -120 86 -80 86 0 L64 -12 L42 8 L18 -16 L-6 6 L-30 -14 L-52 6 L-72 -12 Z" fill="url(#egg)"/>
+    </g>
+    <!-- pet peeking out -->
+    <ellipse cx="0" cy="-6" rx="54" ry="44" fill="#ffcf4d"/>
+    <ellipse cx="-20" cy="-12" rx="9" ry="11" fill="#2a1a3d"/>
+    <ellipse cx="20" cy="-12" rx="9" ry="11" fill="#2a1a3d"/>
+    <circle cx="-17" cy="-16" r="3" fill="#fff"/><circle cx="23" cy="-16" r="3" fill="#fff"/>
+    <path d="M-10 10 Q0 18 10 10" stroke="#2a1a3d" stroke-width="4" fill="none" stroke-linecap="round"/>
+    <path d="M-16 -46 Q-26 -74 -40 -78" stroke="#2a1a3d" stroke-width="4" fill="none" stroke-linecap="round"/>
+    <path d="M16 -46 Q26 -74 40 -78" stroke="#2a1a3d" stroke-width="4" fill="none" stroke-linecap="round"/>
+    <circle cx="-40" cy="-78" r="6" fill="#2a1a3d"/><circle cx="40" cy="-78" r="6" fill="#2a1a3d"/>
+  </g>
+  <!-- small egg -->
+  <g transform="translate(1170 300) rotate(14)">
+    <ellipse cx="0" cy="0" rx="30" ry="40" fill="url(#egg2)"/>
+    <path d="M-20 -4 L-8 6 L4 -6 L16 4" stroke="#6b3fb8" stroke-width="3" fill="none"/>
+  </g>
+  <!-- sparkles -->
+  <g fill="#ffe58a">
+    <path d="M840 90 l6 18 18 6 -18 6 -6 18 -6 -18 -18 -6 18 -6z"/>
+    <path d="M1150 120 l4 12 12 4 -12 4 -4 12 -4 -12 -12 -4 12 -4z"/>
+    <path d="M880 330 l4 12 12 4 -12 4 -4 12 -4 -12 -12 -4 12 -4z"/>
+  </g>
+</svg>

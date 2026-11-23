@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 420" width="640" height="420" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+  <rect width="640" height="420" rx="18" fill="#313338"/>
+
+  <!-- bot line -->
+  <circle cx="44" cy="44" r="20" fill="#5865f2"/>
+  <path d="M34 40 q10 -10 20 0 v8 q-10 6 -20 0z" fill="#fff"/>
+  <text x="76" y="40" font-size="16" font-weight="700" fill="#f2f3f5">HATCH TRACKER</text>
+  <rect x="210" y="26" width="38" height="18" rx="4" fill="#5865f2"/>
+  <text x="229" y="40" font-size="11" font-weight="700" fill="#fff" text-anchor="middle">APP</text>
+  <text x="258" y="40" font-size="12" fill="#949ba4">Today at 18:09</text>
+  <rect x="76" y="50" width="50" height="22" rx="4" fill="#5865f2" fill-opacity="0.3"/>
+  <text x="82" y="66" font-size="15" fill="#c9cdfb">@You</text>
+  <text x="134" y="66" font-size="15" fill="#dbdee1">🎉 New hatch: <tspan font-weight="700" fill="#f2f3f5">Golden Flower Swarm</tspan></text>
+
+  <!-- embed -->
+  <rect x="76" y="86" width="540" height="310" rx="6" fill="#2b2d31"/>
+  <rect x="76" y="86" width="4" height="310" rx="2" fill="#5b6cf0"/>
+
+  <circle cx="106" cy="114" r="12" fill="#c58b4a"/>
+  <text x="126" y="119" font-size="14" font-weight="700" fill="#f2f3f5">You (@your_roblox)</text>
+  <text x="96" y="152" font-size="15" font-weight="700" fill="#f2f3f5">You hatched a Golden Flower Swarm!</text>
+
+  <g font-size="15" fill="#dbdee1">
+    <text x="96" y="190">🥚 <tspan font-weight="700">Egg:</tspan></text>
+    <rect x="158" y="176" width="70" height="20" rx="4" fill="#1e1f22"/><text x="164" y="191" font-family="Consolas, monospace" font-size="13">Bag Egg</text>
+    <text x="96" y="216">⭐ <tspan font-weight="700">Serial:</tspan></text>
+    <rect x="172" y="202" width="40" height="20" rx="4" fill="#1e1f22"/><text x="178" y="217" font-family="Consolas, monospace" font-size="13">#404</text>
+    <text x="96" y="242">💎 <tspan font-weight="700">Value:</tspan></text>
+    <rect x="168" y="228" width="34" height="20" rx="4" fill="#1e1f22"/><text x="174" y="243" font-family="Consolas, monospace" font-size="13">487</text>
+    <text x="96" y="268">🎲 <tspan font-weight="700">Odds:</tspan></text>
+    <rect x="164" y="254" width="62" height="20" rx="4" fill="#1e1f22"/><text x="170" y="269" font-family="Consolas, monospace" font-size="13">1/133M</text>
+    <text x="232" y="268">· <tspan font-weight="700">Luck:</tspan></text>
+    <rect x="290" y="254" width="32" height="20" rx="4" fill="#1e1f22"/><text x="295" y="269" font-family="Consolas, monospace" font-size="13">14x</text>
+    <text x="96" y="310">📘 <tspan font-weight="700">Player's Stats:</tspan></text>
+    <text x="96" y="334">Total Eggs Opened:</text>
+    <rect x="96" y="342" width="50" height="20" rx="4" fill="#1e1f22"/><text x="102" y="357" font-family="Consolas, monospace" font-size="13">35.6M</text>
+  </g>
+  <text x="96" y="384" font-size="12" fill="#b5bac1">Pets Universe • Hatches • Today at 18:08</text>
+
+  <!-- pet thumbnail: golden flower -->
+  <g transform="translate(540 160)">
+    <g fill="#ffd34d" stroke="#c9961a" stroke-width="2">
+      <ellipse cx="0" cy="-26" rx="14" ry="22"/>
+      <ellipse cx="0" cy="26" rx="14" ry="22"/>
+      <ellipse cx="-26" cy="0" rx="22" ry="14"/>
+      <ellipse cx="26" cy="0" rx="22" ry="14"/>
+      <ellipse cx="-18" cy="-18" rx="12" ry="20" transform="rotate(-45 -18 -18)"/>
+      <ellipse cx="18" cy="18" rx="12" ry="20" transform="rotate(-45 18 18)"/>
+      <ellipse cx="18" cy="-18" rx="12" ry="20" transform="rotate(45 18 -18)"/>
+      <ellipse cx="-18" cy="18" rx="12" ry="20" transform="rotate(45 -18 18)"/>
+    </g>
+    <circle r="16" fill="#8a5a12"/>
+    <circle cx="-5" cy="-3" r="2.5" fill="#fff"/><circle cx="5" cy="-3" r="2.5" fill="#fff"/>
+    <path d="M24 40 q8 30 -4 52" stroke="#5c9e3a" stroke-width="5" fill="none"/>
+    <path d="M-48 -44 l4 10 10 4 -10 4 -4 10 -4 -10 -10 -4 10 -4z" fill="#fff3b0"/>
+    <path d="M46 -50 l3 7 7 3 -7 3 -3 7 -3 -7 -7 -3 7 -3z" fill="#fff3b0"/>
+  </g>
+</svg>
