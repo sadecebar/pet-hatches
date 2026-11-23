@@ -10,8 +10,10 @@ Env:
   DISCORD_WEBHOOK_URL  Discord webhook (or HATCH_WEBHOOK_URL to use another) [required]
   DISCORD_USER_ID      your Discord user id, used for the @ping              [optional]
 """
+import base64
 import json
 import os
+import uuid
 import re
 import sys
 import time
@@ -46,6 +48,7 @@ ROWS_JS = r"""() => {
     used.add(p);
     const idx = out.length;
     t.setAttribute('data-htitle', idx);
+    p.setAttribute('data-hrow', idx);
     out.push({idx, title: t.textContent.trim(), text: p.innerText,
       imgs: [...p.querySelectorAll('img')].map(i => { const b = i.getBoundingClientRect();
         return {src: i.currentSrc || i.src, w: Math.round(b.width), h: Math.round(b.height)}; })});
@@ -68,6 +71,8 @@ MODAL_JS = r"""() => {
       if (/Serial/.test(t) && /Total Eggs/i.test(t) && box.querySelectorAll('img').length >= 2) break;
     }
   }
+  document.querySelectorAll('[data-hbox]').forEach(e => e.removeAttribute('data-hbox'));
+  box.setAttribute('data-hbox', '1');
   const imgs = [...box.querySelectorAll('img')].map(sz);
   let avatar = null;
   const at = [...box.querySelectorAll('*')].find(e =>
@@ -82,6 +87,98 @@ MODAL_JS = r"""() => {
   }
   return {text: box.innerText, imgs, avatar};
 }"""
+
+
+# Collects every picture inside a root element: <img> tags AND CSS background
+# images. Each one is tagged with data-hpet so it can be screenshotted later.
+PICS_JS = r"""(sel) => {
+  const root = document.querySelector(sel);
+  if (!root) return [];
+  const out = [];
+  const visit = e => {
+    const b = e.getBoundingClientRect();
+    const w = Math.round(b.width), h = Math.round(b.height);
+    let src = null, kind = null;
+    if (e.tagName === 'IMG') { src = e.currentSrc || e.src; kind = 'img'; }
+    else {
+      const bg = getComputedStyle(e).backgroundImage || '';
+      const m = bg.match(/url\(["']?(.*?)["']?\)/);
+      if (m) { src = m[1]; kind = 'bg'; }
+    }
+    if (src && w >= 20 && h >= 20) {
+      const id = 'p' + Math.random().toString(36).slice(2, 9);
+      e.setAttribute('data-hpet', id);
+      out.push({id, src, kind, w, h});
+    }
+  };
+  visit(root);
+  root.querySelectorAll('*').forEach(visit);
+  return out;
+}"""
+
+
+def check_image(url):
+    """Can Discord show this picture? (fetched from the runner itself)"""
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=10) as r:
+            ctype = (r.headers.get("Content-Type") or "").lower()
+            body = r.read(200000)
+            ok = (r.status == 200 and ctype.startswith("image/") and "svg" not in ctype
+                  and "avif" not in ctype and len(body) > 800)
+            print(f"    check {url[:90]} -> {r.status} {ctype} {len(body)}B {'OK' if ok else 'no'}")
+            return ok
+    except Exception as e:
+        print(f"    check {url[:90]} -> failed: {str(e)[:80]}")
+        return False
+
+
+def data_uri_bytes(src):
+    m = re.match(r"data:image/(png|jpe?g|webp|gif);base64,(.+)", src, re.S)
+    if not m:
+        return None
+    try:
+        raw = base64.b64decode(m.group(2))
+        return raw if len(raw) > 800 else None
+    except Exception:
+        return None
+
+
+def resolve_pet(pg, key, row_idx, avatar):
+    """Find the pet picture: a URL Discord can load, or image bytes to attach.
+    Looks in the open popup first, then in the list row. Returns (url, png_bytes)."""
+    cands = []
+    for where, sel in (("popup", '[data-hbox="1"]'), ("row", f'[data-hrow="{row_idx}"]')):
+        try:
+            for c in pg.evaluate(PICS_JS, sel):
+                c["where"] = where
+                cands.append(c)
+        except Exception as e:
+            print("  pic scan failed in", where, str(e)[:80])
+    cands = [c for c in cands if c["src"] and c["src"] != avatar and "headshot" not in c["src"].lower()]
+    cands.sort(key=lambda c: (c["where"] != "popup", -c["w"] * c["h"]))
+    print(f"pet candidates for {key}: " + json.dumps(
+        [{k: (v[:100] if isinstance(v, str) else v) for k, v in c.items()} for c in cands])[:1500])
+    for c in cands:
+        raw = data_uri_bytes(c["src"])
+        if raw:
+            print("  using embedded data picture", c["id"])
+            return None, raw
+        if c["src"].startswith(("data:", "blob:")):
+            continue
+        url = urljoin(BASE, c["src"])
+        if check_image(url):
+            return url, None
+    for c in cands:  # last resort: screenshot of the picture element
+        try:
+            png = pg.locator(f'[data-hpet="{c["id"]}"]').first.screenshot(timeout=4000)
+            if png and len(png) > 800:
+                print("  using screenshot of", c["where"], c["kind"], c["id"])
+                return None, png
+        except Exception as e:
+            print("  screenshot failed", c["id"], str(e)[:80])
+    print("  no usable pet picture for", key)
+    return None, None
 
 
 # ------------------------------------------------------------------ parsing
@@ -172,12 +269,16 @@ def scrape(seen):
                     pg.wait_for_timeout(500)
                 if got:
                     details[r["key"]] = parse_modal(got)
+                    url, png = resolve_pet(pg, r["key"], r["idx"], got.get("avatar"))
+                    details[r["key"]]["pet_url"], details[r["key"]]["pet_png"] = url, png
                     if len(details) == 1:
                         print("--- first popup text ---")
                         print(got["text"][:600])
                         print("popup images:", json.dumps(got["imgs"])[:300], "avatar:", got.get("avatar"))
                 else:
                     print("no popup details for", r["key"])
+                    url, png = resolve_pet(pg, r["key"], r["idx"], None)
+                    details[r["key"]] = {"pet_url": url, "pet_png": png}
                 try:
                     pg.keyboard.press("Escape")
                     pg.wait_for_timeout(500)
@@ -275,20 +376,33 @@ def build_embed(r, m):
     if icon:
         author["icon_url"] = icon
     emb["author"] = author
-    pet = m.get("pet_icon") or r["icon"]
-    if pet:
-        emb["thumbnail"] = {"url": pet}
+    if m.get("pet_png"):
+        emb["thumbnail"] = {"url": "attachment://pet.png"}
+    elif m.get("pet_url"):
+        emb["thumbnail"] = {"url": m["pet_url"]}
+    elif "pet_url" not in m and (m.get("pet_icon") or r["icon"]):  # old fallback
+        emb["thumbnail"] = {"url": m.get("pet_icon") or r["icon"]}
     return emb
 
 
-def post(content, embed=None):
+def post(content, embed=None, png=None):
     payload = {"content": content}
     if embed:
         payload["embeds"] = [embed]
     if USER_ID:
         payload["allowed_mentions"] = {"users": [USER_ID]}
-    req = urllib.request.Request(WEBHOOK, data=json.dumps(payload).encode(), headers={
-        "Content-Type": "application/json", "User-Agent": "pu-hatches/1.0"})
+    if png:  # embed picture sent as an attachment (attachment://pet.png)
+        bnd = uuid.uuid4().hex
+        head = (f"--{bnd}\r\nContent-Disposition: form-data; name=\"payload_json\"\r\n"
+                f"Content-Type: application/json\r\n\r\n{json.dumps(payload)}\r\n"
+                f"--{bnd}\r\nContent-Disposition: form-data; name=\"files[0]\"; filename=\"pet.png\"\r\n"
+                f"Content-Type: image/png\r\n\r\n")
+        body = head.encode() + png + f"\r\n--{bnd}--\r\n".encode()
+        req = urllib.request.Request(WEBHOOK, data=body, headers={
+            "Content-Type": f"multipart/form-data; boundary={bnd}", "User-Agent": "pu-hatches/1.0"})
+    else:
+        req = urllib.request.Request(WEBHOOK, data=json.dumps(payload).encode(), headers={
+            "Content-Type": "application/json", "User-Agent": "pu-hatches/1.0"})
     with urllib.request.urlopen(req, timeout=20) as r:
         return r.status
 
@@ -327,7 +441,8 @@ def main():
         r = rows[0]
         try:
             print("discord status", post(f"{ping()}\U0001F9EA Preview of a hatch alert (your latest hatch):",
-                                         build_embed(r, details.get(r["key"]))))
+                                         build_embed(r, details.get(r["key"])),
+                                         (details.get(r["key"]) or {}).get("pet_png")))
         except Exception as e:
             print("discord failed:", e, file=sys.stderr)
             return 1
@@ -351,7 +466,8 @@ def main():
     for r in reversed(fresh[:MAX_SEND]):  # oldest first
         m = details.get(r["key"])
         try:
-            st = post(f"{ping()}\U0001F389 New hatch: **{r['name']}**", build_embed(r, m))
+            st = post(f"{ping()}\U0001F389 New hatch: **{r['name']}**", build_embed(r, m),
+                      (m or {}).get("pet_png"))
             print("sent", r["key"], st)
             sent.add(r["key"])
             time.sleep(1)
