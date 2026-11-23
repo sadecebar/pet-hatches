@@ -43,8 +43,8 @@ def sh(*cmd):
 
 def save_state(msg):
     """Commit changed state files so nothing is lost if the job ends."""
-    sh("git", "config", "user.name", "tracker")
-    sh("git", "config", "user.email", "tracker@users.noreply.github.com")
+    sh("git", "config", "user.name", "github-actions[bot]")
+    sh("git", "config", "user.email", "41898283+github-actions[bot]@users.noreply.github.com")
     present = [f for f in FILES if os.path.exists(f)]
     if not present:
         return
