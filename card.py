@@ -171,7 +171,12 @@ def build_html(c):
         tiles.append(("\U0001F95A Eggs opened", c.get("eggs_opened") or "-", False))
     grid = "".join(f'<div class="tile{" main" if m else ""}"><div class="k">{e(k)}</div><div class="v">{e(v)}</div></div>'
                    for k, v, m in tiles)
-    pet = (f'<img class="pet" src="{c["pet_src"]}">' if c.get("pet_src") else '<div class="nopet">\U0001F95A</div>')
+    if c.get("pet_src"):
+        pet = f'<img class="pet" src="{c["pet_src"]}">'
+    elif c.get("pet_icon"):  # icon id from the hatch API, loaded like the site does
+        pet = pet_img(c["pet_icon"], "pet")
+    else:
+        pet = '<div class="nopet">\U0001F95A</div>'
     av = f'<img class="av" src="{e(c["avatar"])}">' if c.get("avatar") else '<div class="av"></div>'
     sparks = "".join(f'<div class="spark" style="left:{x}px;top:{y}px;font-size:{s}px">✦</div>'
                      for x, y, s in ((110, 40, 30), (440, 70, 22), (470, 210, 16), (95, 220, 18)))

@@ -457,6 +457,7 @@ def card_data(r, m, api=None):
         "egg": m.get("hatched_from") or r["egg"],
         "eggs_opened": abbr(m["eggs"]) if m.get("eggs") else None,
         "pet_src": card.to_data_uri(m.get("pet_png"), m.get("pet_url") or m.get("pet_icon") or r.get("icon")),
+        "pet_icon": api.get("icon"),
     }
 
 
