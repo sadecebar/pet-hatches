@@ -189,7 +189,8 @@ def render_html(pages, width=640):
     with sync_playwright() as p:
         b = p.chromium.launch()
         ctx = b.new_context(viewport={"width": width, "height": 1200}, device_scale_factor=2,
-                            user_agent=BROWSER_UA)
+                            user_agent=BROWSER_UA,
+                            bypass_csp=True)  # the site's security policy would block our card's own CSS/fonts
         pg = ctx.new_page()
         try:
             pg.goto(f"{API}?r=meta", wait_until="domcontentloaded", timeout=30000)
@@ -199,6 +200,11 @@ def render_html(pages, width=640):
             try:
                 pg.set_content(h, wait_until="networkidle", timeout=25000)
                 pg.evaluate("document.fonts.ready")
+                styled = pg.evaluate("() => { const c = document.querySelector('.card');"
+                                     " return !!c && getComputedStyle(c).borderTopLeftRadius === '30px'"
+                                     " && c.getBoundingClientRect().width === 600 }")
+                if not styled:  # never send a half-drawn card; the caller falls back to text
+                    raise RuntimeError("card styles did not apply")
                 out.append(pg.locator(".card").screenshot(omit_background=True, timeout=10000))
             except Exception as ex:
                 print("card render failed:", str(ex)[:120])
