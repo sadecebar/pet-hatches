@@ -20,6 +20,9 @@
 
 | Date | Update |
 |---|---|
+| **26 Nov 2026** | 🃏 **Picture cards**: every hatch alert and the daily recap are now a designed card instead of plain text |
+| **26 Nov 2026** | 🎲 Real odds from the site: **base chance**, **your own chance**, **luck** and **secret luck** (`???` when the odds are unknown) |
+| **26 Nov 2026** | 🚦 Handles bursts: 4 Secrets in the same minute all arrive, even if Discord asks to slow down |
 | **26 Nov 2026** | 📅 **Daily recap** every night at 00:00: what each account hatched that day and how much it's all worth |
 | **23 Nov 2026** | 🖼️ Every pet now shows its real picture, even the ones the site hides behind protected links |
 | **23 Nov 2026** | 🧪 Test several different pets at once with `preview_count` |
@@ -31,15 +34,28 @@ This repo makes sure you never miss it.
 
 - 👀 **Watches** the public hatch feed every **60 seconds**
 - 🎉 **Pings you** in a Discord channel for every new hatch on any of your accounts
-- 🖼️ Shows the **pet's picture**, the egg, serial, value, odds and luck, just like the game's own bot
+- 🃏 Sends a **picture card** for every hatch: the pet, its value, how many exist, the odds, your luck and the account
 - 📅 Posts a **daily recap** at midnight: every hatch per account, plus the **total value** you made that day
 - 📱 Runs **100% in the cloud** on GitHub Actions. No PC, no server, works while you sleep
 
-## 📸 What an alert looks like
+## 🃏 What an alert looks like
+
+Every hatch arrives as one card, coloured by rarity (purple for Secret, gold for Exclusive):
 
 <p align="center">
-  <img src="assets/example-alert.svg" alt="Example Discord hatch alert" width="520">
+  <img src="assets/example-card.png" alt="Example hatch card: Beeeee, Exclusive #34" width="420">
 </p>
+
+| Tile | What it shows |
+|---|---|
+| 🎫 **Value** | the pet's value on the site (the same number as when you tap the hatch) |
+| 🌍 **Exists** | how many of this pet exist |
+| 🎲 **Base chance** | the pet's normal odds, or `???` when nobody knows them |
+| 🎯 **Your chance** | your odds with all your boosts (only when it differs from the base chance) |
+| 🍀 **Luck** · ✨ **Secret luck** | the luck you had when it dropped (only for hatches that have it) |
+
+Below that: your Roblox avatar and account, and which egg it came from.
+If a card ever can't be drawn, the alert is still sent as text, so you never miss a hatch.
 
 ## 📅 The daily recap
 
@@ -48,10 +64,10 @@ Every night just after **00:00** (Stockholm time), one message sums up the day t
 - 🥚 how many rare pets hatched, and on how many accounts
 - 🎫 the **total value** of everything you hatched, using the same **Value** the site shows when you tap a hatch (the exact variant, so Rainbow and BIG pets get their own price)
 - 🏆 the best hatch of the day
-- 👤 a breakdown per account: which pets, how many, and what they're worth
+- 👤 a breakdown per account with its avatar: which pets (with their icons), how many, and what they're worth
 
 <p align="center">
-  <img src="assets/example-recap.svg" alt="Example daily hatch recap" width="520">
+  <img src="assets/example-recap.png" alt="Example daily recap card" width="420">
 </p>
 
 The recap reads the site's own public hatch and value lists, so it's fast and exact to the second. A pet without a price yet is shown as *"no price yet"*, never guessed.
@@ -65,10 +81,11 @@ flowchart LR
     B --> C{"New hatch?"}
     C -->|no| A
     C -->|yes| D["🔍 Opens the popup<br/>value · odds · pet picture"]
-    D --> E["💬 Discord webhook<br/>@ping + embed"]
+    D --> H["🃏 Draws the card<br/>value · odds · luck"]
+    H --> E["💬 Discord webhook<br/>@ping + card"]
     E --> F["💾 Remembers it in<br/>data/seen_hatches.json"]
     F --> A
-    A -->|"00:00 every night"| G["📅 Daily recap<br/>hatch list + value list"]
+    A -->|"00:00 every night"| G["📅 Daily recap card<br/>hatch list + value list"]
     G --> E
 ```
 
@@ -100,8 +117,9 @@ Tick **recap** instead to get a recap of the **last 24 hours** right now.
 
 | File | Job |
 |---|---|
-| `hatch.py` | reads the feed, opens popups, finds the pet picture, builds the Discord embed |
-| `recap.py` | the daily recap: collects the day's hatches, prices them and posts the summary |
+| `hatch.py` | reads the feed, opens popups, finds the pet picture, sends the alerts |
+| `card.py` | draws the picture cards (a small web page rendered by the browser, saved as an image) |
+| `recap.py` | the daily recap: collects the day's hatches, prices them and posts the recap card |
 | `runner.py` | the long-running loop: check, save state, recap at midnight, hand over to the next run |
 | `.github/workflows/hatches.yml` | the GitHub Actions workflow (`tracker-runner`) |
 | `data/seen_hatches.json` | hatches already announced |
