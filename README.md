@@ -11,9 +11,18 @@
   <img alt="Python" src="https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white">
   <img alt="Playwright" src="https://img.shields.io/badge/Playwright-headless%20Chromium-2EAD33?logo=playwright&logoColor=white">
   <img alt="checks every minute" src="https://img.shields.io/badge/checks-every%2060%20s-ffb86b">
+  <img alt="daily recap at midnight" src="https://img.shields.io/badge/daily%20recap-00%3A00-f1c40f">
 </p>
 
 ---
+
+## 🆕 What's new
+
+| Date | Update |
+|---|---|
+| **26 Nov 2026** | 📅 **Daily recap** every night at 00:00: what each account hatched that day and how much it's all worth |
+| **23 Nov 2026** | 🖼️ Every pet now shows its real picture, even the ones the site hides behind protected links |
+| **23 Nov 2026** | 🧪 Test several different pets at once with `preview_count` |
 
 ## 🥚 What it does
 
@@ -23,6 +32,7 @@ This repo makes sure you never miss it.
 - 👀 **Watches** the public hatch feed every **60 seconds**
 - 🎉 **Pings you** in a Discord channel for every new hatch on any of your accounts
 - 🖼️ Shows the **pet's picture**, the egg, serial, value, odds and luck, just like the game's own bot
+- 📅 Posts a **daily recap** at midnight: every hatch per account, plus the **total value** you made that day
 - 📱 Runs **100% in the cloud** on GitHub Actions. No PC, no server, works while you sleep
 
 ## 📸 What an alert looks like
@@ -30,6 +40,22 @@ This repo makes sure you never miss it.
 <p align="center">
   <img src="assets/example-alert.svg" alt="Example Discord hatch alert" width="520">
 </p>
+
+## 📅 The daily recap
+
+Every night just after **00:00** (Stockholm time), one message sums up the day that just ended:
+
+- 🥚 how many rare pets hatched, and on how many accounts
+- 🎫 the **total value** of everything you hatched, using the same **Value** the site shows when you tap a hatch (the exact variant, so Rainbow and BIG pets get their own price)
+- 🏆 the best hatch of the day
+- 👤 a breakdown per account: which pets, how many, and what they're worth
+
+<p align="center">
+  <img src="assets/example-recap.svg" alt="Example daily hatch recap" width="520">
+</p>
+
+The recap reads the site's own public hatch and value lists, so it's fast and exact to the second. A pet without a price yet is shown as *"no price yet"*, never guessed.
+If the tracker happens to be offline at midnight, it catches up later that morning. It never posts the same day twice.
 
 ## ⚙️ How it works
 
@@ -42,6 +68,8 @@ flowchart LR
     D --> E["💬 Discord webhook<br/>@ping + embed"]
     E --> F["💾 Remembers it in<br/>data/seen_hatches.json"]
     F --> A
+    A -->|"00:00 every night"| G["📅 Daily recap<br/>hatch list + value list"]
+    G --> E
 ```
 
 - The site is rendered with JavaScript, so a real (headless) browser reads it via **Playwright**.
@@ -66,15 +94,18 @@ flowchart LR
 
 Run the workflow with **preview** ticked to get a sample alert right away.
 Set **preview_count** (1-10) to test several *different* pets in one go. Handy for checking that every pet's picture shows up.
+Tick **recap** instead to get a recap of the **last 24 hours** right now.
 
 ## 📁 What's inside
 
 | File | Job |
 |---|---|
 | `hatch.py` | reads the feed, opens popups, finds the pet picture, builds the Discord embed |
-| `runner.py` | the long-running loop: check, save state, repeat, hand over to the next run |
+| `recap.py` | the daily recap: collects the day's hatches, prices them and posts the summary |
+| `runner.py` | the long-running loop: check, save state, recap at midnight, hand over to the next run |
 | `.github/workflows/hatches.yml` | the GitHub Actions workflow (`tracker-runner`) |
 | `data/seen_hatches.json` | hatches already announced |
+| `data/recap_state.json` | the last day a recap was posted for |
 
 ---
 
