@@ -57,20 +57,40 @@ def short(v):
     for div, suf in ((1e12, "T"), (1e9, "B"), (1e6, "M"), (1e3, "K")):
         if v >= div * (10 if suf == "K" else 1):
             x = v / div
-            return (f"{x:.2f}" if x < 10 else f"{x:.1f}" if x < 100 else f"{x:.0f}").rstrip("0").rstrip(".") + suf
+            t = f"{x:.2f}" if x < 10 else f"{x:.1f}" if x < 100 else f"{x:.0f}"
+            return (t.rstrip("0").rstrip(".") if "." in t else t) + suf  # never turn 400 into 4
     return f"{v:,.0f}"
 
 
-def odds_text(row_odds, catalog):
-    """'1/133,386,693' -> '1 in 133.4M'; falls back to the catalogue odds ('1 in 333')."""
-    m = re.search(r"1/([\d,]+)", row_odds or "")
-    if m:
-        return f"1 in {short(m.group(1).replace(',', ''))}"
-    c = (catalog or "").strip()
-    m = re.fullmatch(r"1 in ([\d,]+)", c)
-    if m:
-        return f"1 in {short(m.group(1).replace(',', ''))}"
-    return c or None
+def chance_text(pct):
+    """API chance is a PERCENT (like the site's popup: 1/round(100/chance)). 2.5e-7 -> '1 in 400M'."""
+    if not pct or pct <= 0:
+        return None
+    return "1 in 1" if pct >= 100 else f"1 in {short(round(100 / pct))}"
+
+
+def luck_text(x):
+    """Same as the popup: 14.175 -> '14.18x', 150 -> '150x'."""
+    if not x:
+        return None
+    return f"{x:.0f}x" if x >= 100 else f"{round(x, 2):g}x"
+
+
+def odds_text(catalog):
+    """Catalogue odds only when they really are odds ('1 in 7,500'); anything else ('Honey Island',
+    'Clan War #1', '1 in ???') means unknown."""
+    m = re.fullmatch(r"1 in ([\d,]+)", (catalog or "").strip())
+    return f"1 in {short(m.group(1).replace(',', ''))}" if m else None
+
+
+def api_hatches(query, limit=60):
+    """The site's hatch list for a player search, keyed by (pet name, serial)."""
+    from urllib.parse import quote
+    req = urllib.request.Request(f"{API}?r=hatches&limit={limit}&kind=pets&q={quote(query)}", headers={
+        "User-Agent": BROWSER_UA, "Referer": "https://petsuniverse.org/hatches", "Accept": "application/json"})
+    with urllib.request.urlopen(req, timeout=20) as r:
+        d = json.load(r)
+    return {(h.get("pretty"), str(h.get("serial"))): h for h in d.get("list") or []}
 
 
 def to_data_uri(png=None, url=None):
@@ -142,7 +162,9 @@ def build_html(c):
     accent, glow = THEMES.get((c.get("rarity") or "").lower(), DEFAULT_THEME)
     e = lambda x: html.escape(str(x)) if x not in (None, "") else ""
     tiles = [("\U0001F3AB Value", c.get("value"), True), ("\U0001F30D Exists", c.get("exists"), False),
-             ("\U0001F3B2 Odds", c.get("odds"), False), ("\U0001F340 Luck", c.get("luck"), False)]
+             ("\U0001F3B2 Base chance", c.get("odds") or "???", False),
+             ("\U0001F3AF Your chance", c.get("pchance"), False),
+             ("\U0001F340 Luck", c.get("luck"), False), ("✨ Secret luck", c.get("sluck"), False)]
     tiles = [t for t in tiles if t[1]]
     eggs_tile = len(tiles) % 2 == 1  # keep the grid even
     if eggs_tile:
@@ -157,7 +179,7 @@ def build_html(c):
     foot_l = f"\U0001F95A {e(c['eggs_opened'])} eggs opened" if c.get("eggs_opened") and not eggs_tile else ""
     return f"""<!doctype html><html><head><meta charset="utf-8"><style>{CSS}</style></head>
 <body><div class="card" style="--accent:{accent};--glow:{glow}">
-  <div class="top"><div class="tag">NEW HATCH</div><div class="when">{e(c.get('when'))}</div></div>
+  <div class="top"><div class="tag">{e(c.get('tag') or 'NEW HATCH')}</div><div class="when">{e(c.get('when'))}</div></div>
   <div class="hero"><div class="halo"></div><div class="ring"></div>{sparks}{pet}</div>
   <h1>{e(c.get('name'))}</h1>
   <div class="sub">{f'<span class="chip r">{e(c["rarity"])}</span>' if c.get("rarity") else ""}
@@ -300,7 +322,7 @@ def build_recap_html(r):
     foot_l = " · ".join(notes)
     return f"""<!doctype html><html><head><meta charset="utf-8"><style>{CSS}{RECAP_CSS}</style></head>
 <body><div class="card" style="--accent:{accent};--glow:{glow}">
-  <div class="top"><div class="tag">DAILY RECAP</div><div class="when">{e(r.get('label'))}</div></div>
+  <div class="top"><div class="tag">{e(r.get('tag') or 'DAILY RECAP')}</div><div class="when">{e(r.get('label'))}</div></div>
   {body}
   <div class="foot"><span>{foot_l}</span><span>Pets Universe · Hatch Tracker</span></div>
 </div></body></html>"""

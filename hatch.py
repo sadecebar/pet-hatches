@@ -431,24 +431,27 @@ def build_embed(r, m):
     return emb
 
 
-def card_data(r, m):
-    """Everything the picture card shows, from the row, the popup and the site's value list."""
+def card_data(r, m, api=None):
+    """Everything the picture card shows, from the row, the popup, the site's hatch API record
+    (odds, the player's own chance, luck) and the value list (value, exists)."""
     import card
     m = m or {}
-    blob = " ".join(r["extras"])
-    rarity = next((e for e in r["extras"] if e.lower() in COLORS), "")
-    mo = re.search(r"1/[\d,]+", blob)
-    ml = re.search(r"(\d+(?:\.\d+)?)x luck", blob, re.I)
+    api = api or {}
+    rarity = next((e for e in r["extras"] if e.lower() in COLORS), "") or api.get("rarity", "")
     it = card.lookup(r["name"])
-    user = m.get("username", "")
+    user = m.get("username", "") or api.get("name", "")
+    base = card.chance_text(api.get("chance"))
+    mine = card.chance_text(api.get("pchance"))
     return {
         "name": r["name"], "serial": r["serial"], "rarity": rarity,
         "when": (m.get("when") or "").replace(", ", " · "),
         # the popup's Value first (what the site shows), the value list's RAP if the popup had none
         "value": m.get("value") or card.short(it.get("rap")),
         "exists": card.short(it.get("ex")),
-        "odds": card.odds_text(mo.group(0) if mo else "", it.get("od")),
-        "luck": f"{ml.group(1)}x" if ml else None,
+        "odds": base or card.odds_text(it.get("od")),  # None -> the card shows ???
+        "pchance": mine if mine and mine != base else None,
+        "luck": card.luck_text(api.get("luck")),
+        "sluck": card.luck_text(api.get("sluck")),
         "display": m.get("display") or r["acct"], "username": user,
         "avatar": roblox_headshot(user) or m.get("avatar"),
         "egg": m.get("hatched_from") or r["egg"],
@@ -461,7 +464,14 @@ def make_cards(rs, details):
     """PNG card per row (None where it failed - that alert falls back to the text embed)."""
     try:
         import card
-        pngs = card.render([card_data(r, details.get(r["key"])) for r in rs])
+        try:
+            api = card.api_hatches(QUERY)
+        except Exception as e:
+            print("hatch API failed (odds/luck left out):", str(e)[:100])
+            api = {}
+        recs = [api.get((r["name"], r["serial"].replace(",", ""))) for r in rs]
+        print("api records matched:", sum(1 for x in recs if x), "/", len(rs))
+        pngs = card.render([card_data(r, details.get(r["key"]), a) for r, a in zip(rs, recs)])
         print("cards rendered:", sum(1 for p in pngs if p), "/", len(rs))
         return pngs
     except Exception as e:

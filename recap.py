@@ -83,7 +83,8 @@ def fmt(v):
     for div, suf in ((1e9, "B"), (1e6, "M"), (1e3, "K")):
         if v >= div:
             x = v / div
-            return (f"{x:.2f}" if x < 10 else f"{x:.1f}" if x < 100 else f"{x:.0f}").rstrip("0").rstrip(".") + suf
+            t = f"{x:.2f}" if x < 10 else f"{x:.1f}" if x < 100 else f"{x:.0f}"
+            return (t.rstrip("0").rstrip(".") if "." in t else t) + suf  # never turn 400 into 4
     return f"{v:,.0f}"
 
 
