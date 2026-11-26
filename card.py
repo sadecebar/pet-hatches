@@ -170,19 +170,34 @@ def build_html(c):
 </div></body></html>"""
 
 
-def render(cards):
-    """List of card dicts -> list of PNG bytes (None where rendering failed)."""
-    if not cards:
+def pet_img(icon, cls="pi"):
+    """<img> for a pet icon id, loaded the way the site does it: the public asset first,
+    then the protected /img.php link (works because cards are drawn on the site's own origin)."""
+    if not icon:
+        return f'<span class="{cls} none">\U0001F95A</span>'
+    return (f'<img class="{cls}" src="/assets/game/s/{icon}.webp" '
+            f'onerror="if(!this.dataset.t){{this.dataset.t=1;this.src=\'/img.php?a={icon}\'}}else{{this.remove()}}">')
+
+
+def render_html(pages, width=640):
+    """List of HTML strings -> list of PNG bytes of their .card element (None where it failed).
+    Pages are drawn on the petsuniverse.org origin so protected pictures load like on the site."""
+    if not pages:
         return []
     from playwright.sync_api import sync_playwright
     out = []
     with sync_playwright() as p:
         b = p.chromium.launch()
-        ctx = b.new_context(viewport={"width": 640, "height": 1000}, device_scale_factor=2)
+        ctx = b.new_context(viewport={"width": width, "height": 1200}, device_scale_factor=2,
+                            user_agent=BROWSER_UA)
         pg = ctx.new_page()
-        for c in cards:
+        try:
+            pg.goto(f"{API}?r=meta", wait_until="domcontentloaded", timeout=30000)
+        except Exception as ex:
+            print("card: could not open the site origin (protected pictures may be missing):", str(ex)[:100])
+        for h in pages:
             try:
-                pg.set_content(build_html(c), wait_until="networkidle", timeout=20000)
+                pg.set_content(h, wait_until="networkidle", timeout=25000)
                 pg.evaluate("document.fonts.ready")
                 out.append(pg.locator(".card").screenshot(omit_background=True, timeout=10000))
             except Exception as ex:
@@ -190,3 +205,96 @@ def render(cards):
                 out.append(None)
         b.close()
     return out
+
+
+def render(cards):
+    """Hatch card dicts -> PNG bytes."""
+    return render_html([build_html(c) for c in cards])
+
+
+# ------------------------------------------------------------------ daily recap card
+RECAP_CSS = """
+.big{display:flex;align-items:flex-end;justify-content:space-between;margin:22px 0 6px;position:relative}
+.big .k{font-size:14px;color:#a1a1b5;font-weight:600;letter-spacing:.08em;text-transform:uppercase}
+.big .v{font-size:56px;font-weight:800;color:var(--accent);line-height:1;margin-top:4px}
+.big .r{text-align:right;font-size:18px;color:#d7d7e3;font-weight:600;line-height:1.5}
+.big .r b{font-size:26px;color:#fff}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 16px;position:relative}
+.best{display:flex;align-items:center;gap:16px;padding:14px 16px;border-radius:20px;position:relative;
+  background:color-mix(in srgb,var(--accent) 12%,transparent);border:1px solid color-mix(in srgb,var(--accent) 40%,transparent)}
+.best .pi{width:92px;height:92px;object-fit:contain;filter:drop-shadow(0 8px 12px rgba(0,0,0,.5))}
+.best .none{font-size:60px;width:92px;text-align:center}
+.best .t{font-size:13px;color:var(--accent);font-weight:800;letter-spacing:.14em}
+.best .n{font-size:24px;font-weight:800;margin:2px 0}
+.best .s{font-size:15px;color:#c9c9d6}
+.acc{margin-top:10px;padding:12px 14px;border-radius:18px;background:#ffffff0b;border:1px solid #ffffff12;position:relative}
+.acc .h{display:flex;align-items:center;gap:12px}
+.acc .av{width:40px;height:40px}
+.acc .n{font-size:18px;font-weight:800}
+.acc .u{font-size:13px;color:#9a9ab0}
+.acc .tot{margin-left:auto;text-align:right}
+.acc .tot .v{font-size:20px;font-weight:800;color:var(--accent)}
+.acc .tot .c{font-size:13px;color:#9a9ab0}
+.pets{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.pc{display:flex;align-items:center;gap:6px;padding:4px 10px 4px 4px;border-radius:99px;background:#ffffff0d;font-size:14px;font-weight:600}
+.pc .pi{width:28px;height:28px;object-fit:contain}
+.pc .none{font-size:18px;width:28px;text-align:center}
+.pc .x{color:#9a9ab0}
+.empty{text-align:center;padding:40px 0 30px;font-size:22px;color:#c9c9d6;position:relative}
+.empty div{font-size:80px}
+.more{text-align:center;color:#9a9ab0;font-size:14px;margin-top:10px;position:relative}
+"""
+RARITY_DOT = {"secret": "#c084fc", "exclusive": "#facc15", "mythical": "#f87171", "legendary": "#fb923c"}
+
+
+def build_recap_html(r):
+    """r: {label, total, n, accounts_n, rarity: [(name, n)], unpriced, partial,
+    best: {pretty, icon, value, display, name},
+    accounts: [{display, name, uid, n, value, pets: [(pretty, count, value, icon)]}]}"""
+    accent, glow = "#facc15", "rgba(250,204,21,.40)"
+    e = lambda x: html.escape(str(x)) if x not in (None, "") else ""
+    chips = "".join(f'<span class="chip" style="color:{RARITY_DOT.get(k.lower(), "#d7d7e3")}">'
+                    f'● {e(k.title() or "Other")} {n}</span>' for k, n in r.get("rarity", []))
+    if not r.get("n"):
+        body = '<div class="empty"><div>\U0001F634</div>No rare hatches on any account.</div>'
+    else:
+        b = r.get("best")
+        best = ""
+        if b:
+            best = (f'<div class="best">{pet_img(b.get("icon"))}<div><div class="t">BEST HATCH</div>'
+                    f'<div class="n">{e(b["pretty"])}</div>'
+                    f'<div class="s">\U0001F3AB {e(b["value"])} · {e(b["display"])} (@{e(b["name"])})</div></div></div>')
+        rows = []
+        for a in r["accounts"][:7]:
+            chips_p = []
+            for pn, c, v, icon in a["pets"][:6]:
+                x = f"×{c}" if c > 1 else ""
+                chips_p.append(f'<span class="pc">{pet_img(icon)}<span>{e(pn)}</span><span class="x">{x}</span></span>')
+            if len(a["pets"]) > 6:
+                chips_p.append(f'<span class="pc"><span class="x">+{len(a["pets"]) - 6} more</span></span>')
+            hide = "this.style.visibility='hidden'"
+            av = (f'<img class="av" src="/img.php?u={e(a["uid"])}" onerror="{hide}">' if a.get("uid")
+                  else '<div class="av"></div>')
+            hs = "es" if a["n"] != 1 else ""
+            rows.append(f'<div class="acc"><div class="h">{av}<div><div class="n">{e(a["display"])}</div>'
+                        f'<div class="u">@{e(a["name"])}</div></div><div class="tot">'
+                        f'<div class="v">\U0001F3AB {e(a["value"])}</div><div class="c">{a["n"]} hatch{hs}</div></div></div>'
+                        f'<div class="pets">{"".join(chips_p)}</div></div>')
+        more = f'<div class="more">+{len(r["accounts"]) - 7} more accounts</div>' if len(r["accounts"]) > 7 else ""
+        hs = "es" if r["n"] != 1 else ""
+        acs = "s" if r["accounts_n"] != 1 else ""
+        body = (f'<div class="big"><div><div class="k">\U0001F3AB Total value</div><div class="v">{e(r["total"])}</div></div>'
+                f'<div class="r"><b>{r["n"]}</b> hatch{hs}<br>on <b>{r["accounts_n"]}</b> account{acs}</div></div>'
+                f'<div class="chips">{chips}</div>{best}{"".join(rows)}{more}')
+    notes = []
+    if r.get("unpriced"):
+        notes.append(f'{r["unpriced"]} without a price')
+    if r.get("partial"):
+        notes.append("feed limit reached, oldest may be missing")
+    foot_l = " · ".join(notes)
+    return f"""<!doctype html><html><head><meta charset="utf-8"><style>{CSS}{RECAP_CSS}</style></head>
+<body><div class="card" style="--accent:{accent};--glow:{glow}">
+  <div class="top"><div class="tag">DAILY RECAP</div><div class="when">{e(r.get('label'))}</div></div>
+  {body}
+  <div class="foot"><span>{foot_l}</span><span>Pets Universe · Hatch Tracker</span></div>
+</div></body></html>"""

@@ -17,6 +17,7 @@ import uuid
 import re
 import sys
 import time
+import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
@@ -496,8 +497,20 @@ def post(content, embed=None, png=None, fname="pet.png"):
     else:
         req = urllib.request.Request(WEBHOOK, data=json.dumps(payload).encode(), headers={
             "Content-Type": "application/json", "User-Agent": "pu-hatches/1.0"})
-    with urllib.request.urlopen(req, timeout=20) as r:
-        return r.status
+    for attempt in range(4):  # bursts: Discord may answer 429 "slow down" - wait as told, then retry
+        try:
+            with urllib.request.urlopen(req, timeout=30) as r:
+                return r.status
+        except urllib.error.HTTPError as e:
+            if attempt == 3 or not (e.code == 429 or e.code >= 500):
+                raise
+            wait = 2.0
+            try:
+                wait = float(json.loads(e.read() or b"{}").get("retry_after", wait))
+            except Exception:
+                pass
+            print(f"discord {e.code}, retrying in {wait:.1f}s")
+            time.sleep(min(wait, 30) + 0.5)
 
 
 def ping():
@@ -572,7 +585,7 @@ def main():
             st = send_alert(r, m, cpng, f"{ping()}\U0001F389 New hatch: **{r['name']}**")
             print("sent", r["key"], st)
             sent.add(r["key"])
-            time.sleep(1)
+            time.sleep(1.2)  # spacing between alerts in a burst
         except Exception as e:
             print("discord failed for", r["key"], e, file=sys.stderr)
     skipped = {r["key"] for r in fresh[MAX_SEND:]}  # beyond the cap: mark seen, no flood

@@ -149,14 +149,64 @@ def build(hatches, items, start, end, label, partial=False):
             "timestamp": end.astimezone(timezone.utc).isoformat()}
 
 
+def card_data(hatches, items, start, end, label, partial=False):
+    """Same numbers as build(), shaped for the picture card."""
+    by_key = {i["k"]: i for i in items if i.get("k")}
+    by_name = {}
+    for i in items:
+        by_name.setdefault(i.get("name"), i)
+    day = [h for h in hatches if start.timestamp() <= h.get("at", 0) < end.timestamp()]
+    accts, rar = {}, defaultdict(int)
+    total, unpriced, best = 0.0, 0, None
+    for h in sorted(day, key=lambda h: h["at"]):
+        v = value_of(h, by_key, by_name)
+        user = h.get("name") or h.get("display") or "?"
+        a = accts.setdefault(user, {"display": h.get("display") or user, "name": user, "uid": h.get("uid"),
+                                    "n": 0, "v": 0.0, "pets": {}})
+        a["n"] += 1
+        pet = h.get("pretty") or h.get("pet") or "?"
+        p = a["pets"].setdefault(pet, [0, 0.0, h.get("icon")])
+        p[0] += 1
+        if v is None:
+            unpriced += 1
+        else:
+            p[1] += v
+            a["v"] += v
+            total += v
+            if best is None or v > best[0]:
+                best = (v, h)
+        rar[(h.get("rarity") or "").lower()] += 1
+    accounts = []
+    for a in sorted(accts.values(), key=lambda a: (-a["v"], -a["n"])):
+        pets = sorted(((pn, c, v, icon) for pn, (c, v, icon) in a["pets"].items()), key=lambda x: (-x[2], -x[1]))
+        accounts.append({"display": a["display"], "name": a["name"], "uid": a["uid"], "n": a["n"],
+                         "value": fmt(a["v"]), "pets": pets})
+    return {"label": label, "total": fmt(total), "n": len(day), "accounts_n": len(accts),
+            "rarity": sorted(rar.items(), key=lambda x: -x[1]), "unpriced": unpriced, "partial": partial,
+            "best": ({"pretty": best[1].get("pretty"), "icon": best[1].get("icon"), "value": fmt(best[0]),
+                      "display": best[1].get("display"), "name": best[1].get("name")} if best else None),
+            "accounts": accounts}
+
+
 def send(start, end, label):
     hatches, items = fetch()
     oldest = min((h.get("at", 0) for h in hatches), default=0)
     partial = len(hatches) >= LIMIT and oldest > start.timestamp()
     emb = build(hatches, items, start, end, label, partial)
     print(emb["description"])
-    st = hatch.post("", emb)
-    print("recap discord status", st)
+    png = None
+    try:
+        import card
+        png = card.render_html([card.build_recap_html(card_data(hatches, items, start, end, label, partial))])[0]
+    except Exception as e:
+        print("recap card failed, sending text:", str(e)[:150])
+    if png:
+        pic = {"title": emb["title"], "color": emb["color"], "image": {"url": "attachment://recap.png"},
+               "timestamp": emb["timestamp"]}
+        st = hatch.post("", pic, png, "recap.png")
+    else:
+        st = hatch.post("", emb)
+    print("recap discord status", st, "(card)" if png else "(text)")
     return 0
 
 
