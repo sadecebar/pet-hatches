@@ -22,12 +22,17 @@ try:
     import track
 except ImportError:
     track = None
+try:
+    import recap  # daily hatch recap (pet-hatches repo only)
+except ImportError:
+    recap = None
 
 TZ = ZoneInfo("Europe/Stockholm")
 POLL = int(os.environ.get("POLL_SECONDS", "60"))
 RUN_FOR = int(float(os.environ.get("RUN_FOR_SECONDS", str(345 * 60))))
 STOP_AT = datetime.fromisoformat(os.environ["STOP_AT"]) if os.environ.get("STOP_AT") else None
-FILES = ["data/seen_hatches.json", track.DB if track else "data/tracker.db"]
+FILES = ["data/seen_hatches.json", track.DB if track else "data/tracker.db",
+         recap.STATE if recap else "data/recap_state.json"]
 
 if track and os.environ.get("FLOWER_WEBHOOK_URL"):  # optional: flower reports to another channel
     track.WEBHOOK = os.environ["FLOWER_WEBHOOK_URL"]
@@ -87,6 +92,8 @@ def flower_overdue():
 
 
 def main():
+    if os.environ.get("RECAP", "").lower() == "true" and recap:  # manual test: last 24 h recap, then stop
+        return safe("recap (last 24 h)", recap.last24)
     if os.environ.get("PREVIEW", "").lower() == "true":  # manual test run: one check, then stop
         code = 0
         if hatch:
@@ -125,6 +132,13 @@ def main():
         if hatch:
             safe("hatch check", hatch.main)
             save_state("seen hatches")
+        if recap:
+            try:  # quiet: only does something once a day, shortly after midnight
+                recap.maybe_daily()
+            except Exception:
+                print("daily recap crashed:")
+                traceback.print_exc()
+            save_state("daily recap")
         if STOP_AT and now >= STOP_AT:
             print("stop time reached - finished")
             if track and track.WEBHOOK:

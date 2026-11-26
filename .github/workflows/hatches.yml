@@ -9,6 +9,10 @@ on:
         description: "Send a sample hatch alert and stop"
         type: boolean
         default: false
+      recap:
+        description: "Post a recap of the last 24 hours now and stop"
+        type: boolean
+        default: false
       preview_count:
         description: "Preview: how many different pets to test (1-10)"
         type: string
@@ -56,8 +60,9 @@ jobs:
           DISCORD_USER_ID: ${{ secrets.DISCORD_USER_ID }}
           PREVIEW: ${{ inputs.preview }}
           PREVIEW_COUNT: ${{ inputs.preview_count }}
+          RECAP: ${{ inputs.recap }}
       - name: Start the next run
-        if: ${{ !cancelled() && inputs.preview != true && steps.gate.outputs.done != 'true' && steps.loop.outputs.done != 'true' }}
+        if: ${{ !cancelled() && inputs.preview != true && inputs.recap != true && steps.gate.outputs.done != 'true' && steps.loop.outputs.done != 'true' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh workflow run "${{ github.workflow }}" --ref "${{ github.ref_name }}"
