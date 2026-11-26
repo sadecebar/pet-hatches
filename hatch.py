@@ -430,7 +430,55 @@ def build_embed(r, m):
     return emb
 
 
-def post(content, embed=None, png=None):
+def card_data(r, m):
+    """Everything the picture card shows, from the row, the popup and the site's value list."""
+    import card
+    m = m or {}
+    blob = " ".join(r["extras"])
+    rarity = next((e for e in r["extras"] if e.lower() in COLORS), "")
+    mo = re.search(r"1/[\d,]+", blob)
+    ml = re.search(r"(\d+(?:\.\d+)?)x luck", blob, re.I)
+    it = card.lookup(r["name"])
+    user = m.get("username", "")
+    return {
+        "name": r["name"], "serial": r["serial"], "rarity": rarity,
+        "when": (m.get("when") or "").replace(", ", " · "),
+        # the popup's Value first (what the site shows), the value list's RAP if the popup had none
+        "value": m.get("value") or card.short(it.get("rap")),
+        "exists": card.short(it.get("ex")),
+        "odds": card.odds_text(mo.group(0) if mo else "", it.get("od")),
+        "luck": f"{ml.group(1)}x" if ml else None,
+        "display": m.get("display") or r["acct"], "username": user,
+        "avatar": roblox_headshot(user) or m.get("avatar"),
+        "egg": m.get("hatched_from") or r["egg"],
+        "eggs_opened": abbr(m["eggs"]) if m.get("eggs") else None,
+        "pet_src": card.to_data_uri(m.get("pet_png"), m.get("pet_url") or m.get("pet_icon") or r.get("icon")),
+    }
+
+
+def make_cards(rs, details):
+    """PNG card per row (None where it failed - that alert falls back to the text embed)."""
+    try:
+        import card
+        pngs = card.render([card_data(r, details.get(r["key"])) for r in rs])
+        print("cards rendered:", sum(1 for p in pngs if p), "/", len(rs))
+        return pngs
+    except Exception as e:
+        print("cards failed, using text alerts:", str(e)[:150])
+        return [None] * len(rs)
+
+
+def send_alert(r, m, card_png, content):
+    """Picture card if we have one, else the classic text embed."""
+    if card_png:
+        rarity = next((e for e in r["extras"] if e.lower() in COLORS), "")
+        emb = {"color": COLORS.get(rarity.lower(), 0x5865F2), "image": {"url": "attachment://card.png"},
+               "timestamp": hatch_time((m or {}).get("when")) or datetime.now(timezone.utc).isoformat()}
+        return post(content, emb, card_png, "card.png")
+    return post(content, build_embed(r, m), (m or {}).get("pet_png"))
+
+
+def post(content, embed=None, png=None, fname="pet.png"):
     payload = {"content": content}
     if embed:
         payload["embeds"] = [embed]
@@ -440,7 +488,7 @@ def post(content, embed=None, png=None):
         bnd = uuid.uuid4().hex
         head = (f"--{bnd}\r\nContent-Disposition: form-data; name=\"payload_json\"\r\n"
                 f"Content-Type: application/json\r\n\r\n{json.dumps(payload)}\r\n"
-                f"--{bnd}\r\nContent-Disposition: form-data; name=\"files[0]\"; filename=\"pet.png\"\r\n"
+                f"--{bnd}\r\nContent-Disposition: form-data; name=\"files[0]\"; filename=\"{fname}\"\r\n"
                 f"Content-Type: image/png\r\n\r\n")
         body = head.encode() + png + f"\r\n--{bnd}--\r\n".encode()
         req = urllib.request.Request(WEBHOOK, data=body, headers={
@@ -486,13 +534,15 @@ def main():
         picks = preview_rows(rows)
         print("preview pets:", [r["key"] for r in picks])
         failed = 0
-        for i, r in enumerate(picks, 1):
+        cards = make_cards(picks, details)
+        for i, (r, cpng) in enumerate(zip(picks, cards), 1):
             m = details.get(r["key"]) or {}
-            print(f"preview {r['key']}: pet_url={m.get('pet_url')} png={'yes' if m.get('pet_png') else 'no'}")
+            print(f"preview {r['key']}: pet_url={m.get('pet_url')} png={'yes' if m.get('pet_png') else 'no'}"
+                  f" card={'yes' if cpng else 'no'}")
             try:
-                print("discord status", post(
-                    f"{ping()}\U0001F9EA Test alert {i}/{len(picks)}: **{r['name']}**",
-                    build_embed(r, details.get(r["key"])), m.get("pet_png")))
+                print("discord status", send_alert(
+                    r, details.get(r["key"]), cpng,
+                    f"{ping()}\U0001F9EA Test alert {i}/{len(picks)}: **{r['name']}**"))
             except Exception as e:
                 failed += 1
                 print("discord failed:", e, file=sys.stderr)
@@ -514,11 +564,12 @@ def main():
     fresh = [r for r in rows if r["key"] not in seen]
     print("new hatches:", len(fresh))
     sent = set()
-    for r in reversed(fresh[:MAX_SEND]):  # oldest first
+    batch = list(reversed(fresh[:MAX_SEND]))  # oldest first
+    cards = make_cards(batch, details) if batch else []
+    for r, cpng in zip(batch, cards):
         m = details.get(r["key"])
         try:
-            st = post(f"{ping()}\U0001F389 New hatch: **{r['name']}**", build_embed(r, m),
-                      (m or {}).get("pet_png"))
+            st = send_alert(r, m, cpng, f"{ping()}\U0001F389 New hatch: **{r['name']}**")
             print("sent", r["key"], st)
             sent.add(r["key"])
             time.sleep(1)
