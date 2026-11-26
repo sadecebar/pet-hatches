@@ -226,7 +226,10 @@ def render_html(pages, width=640):
         for h in pages:
             try:
                 pg.set_content(h, wait_until="networkidle", timeout=25000)
-                pg.evaluate("document.fonts.ready")
+                try:  # never wait forever for web fonts - fall back to system fonts
+                    pg.wait_for_function("document.fonts.status === 'loaded'", timeout=10000)
+                except Exception:
+                    print("fonts slow - drawing with fallback fonts")
                 styled = pg.evaluate("() => { const c = document.querySelector('.card');"
                                      " return !!c && getComputedStyle(c).borderTopLeftRadius === '30px'"
                                      " && c.getBoundingClientRect().width === 600 }")

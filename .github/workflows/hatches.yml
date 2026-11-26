@@ -52,7 +52,7 @@ jobs:
       - name: Run tracker loop
         id: loop
         if: steps.gate.outputs.done != 'true'
-        run: python runner.py
+        run: python -u runner.py   # -u: log lines appear immediately
         env:
           HATCH_QUERY: ${{ secrets.HATCH_QUERY }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
