@@ -69,6 +69,135 @@ def fetch():
     return h.get("list") or [], v.get("items") or []
 
 
+# ------------------------------------------------------------------ hatch log
+# The site only ever returns the newest 60 hatches per search, so a busy day can't be read back
+# at midnight. Instead the tracker writes every hatch down as it sees it (every minute), with the
+# site's own hatch time, and the recap adds up that log.
+LOG = os.environ.get("HATCH_LOG", "data/hatch_log.json")
+LOG_KEEP_DAYS = 10
+LOG_FIELDS = ("at", "uid", "name", "display", "pet", "pretty", "rarity", "serial", "icon")
+PETS_SPLIT = ("Flower Swarm", "Road Pirates Bees", "Golden Flower Swarm", "Golden Road Pirates Bees",
+              "Wet Flower Swarm", "Wet Road Pirates Bees")
+
+
+def log_key(h):
+    return f"{h.get('uid')}|{h.get('pretty')}|{h.get('serial')}"
+
+
+def load_log():
+    try:
+        with open(LOG, encoding="utf-8") as f:
+            return json.load(f)
+    except (FileNotFoundError, ValueError):
+        return None
+
+
+def save_log(lg):
+    cut = datetime.now(timezone.utc).timestamp() - LOG_KEEP_DAYS * 86400
+    lg["hatches"] = {k: h for k, h in lg["hatches"].items() if h.get("at", 0) >= cut}
+    lg["gaps"] = [g for g in lg.get("gaps", []) if g[1] >= cut]
+    os.makedirs(os.path.dirname(LOG) or ".", exist_ok=True)
+    with open(LOG, "w", encoding="utf-8") as f:
+        json.dump(lg, f, separators=(",", ":"))
+
+
+def _merge(lg, hatches):
+    new = 0
+    for h in hatches:
+        if h.get("at") is None:
+            continue
+        k = log_key(h)
+        if k not in lg["hatches"]:
+            new += 1
+        lg["hatches"][k] = {f: h.get(f) for f in LOG_FIELDS}
+        if h.get("name") and h["name"] not in lg["accounts"]:
+            lg["accounts"].append(h["name"])
+    return new
+
+
+def deep_fetch(since):
+    """Everything since `since` (unix s), working around the 60 limit: one search per account,
+    split by pet when an account alone has more than 60. Returns (hatches, complete)."""
+    got, complete = [], True
+
+    def q(extra):
+        return _api_direct(f"r=hatches&limit={LIMIT}&kind=pets&{extra}").get("list") or []
+
+    def full(lst):
+        return len(lst) >= LIMIT and min(h.get("at", 0) for h in lst) > since
+
+    lg = load_log() or {"accounts": []}
+    accts = set(lg.get("accounts", []))
+    for extra in [f"q={quote(hatch.QUERY)}"] + [f"q={quote(hatch.QUERY)}&pet={quote(p)}" for p in PETS_SPLIT]:
+        lst = q(extra)
+        got += lst
+        accts |= {h["name"] for h in lst if h.get("name")}
+    for a in sorted(accts):
+        lst = q(f"q={quote(a)}")
+        got += lst
+        if full(lst):
+            for p in PETS_SPLIT:
+                l2 = q(f"q={quote(a)}&pet={quote(p)}")
+                got += l2
+                complete = complete and not full(l2)
+    return got, complete
+
+
+def log_feed():
+    """Called every loop: write the newest hatches into the log. If the tracker was away so long
+    that the newest 60 don't reach back to the last check, fill the gap with a deep search."""
+    now = datetime.now(timezone.utc).timestamp()
+    lg = load_log() or {"hatches": {}, "accounts": [], "since": None, "last_ok": None, "gaps": []}
+    lst = _api_direct(f"r=hatches&limit={LIMIT}&kind=pets&q={quote(hatch.QUERY)}").get("list") or []
+    oldest = min((h.get("at", now) for h in lst), default=now)
+    full = len(lst) >= LIMIT
+    if lg.get("since") is None:  # first start (no saved log): rebuild from yesterday 00:00 with a deep search
+        y0 = datetime.combine((datetime.now(TZ) - timedelta(days=1)).date(), datetime.min.time(), TZ).timestamp()
+        try:
+            more, _ = deep_fetch(y0)
+            lst += more
+            lg["since"] = y0 if not full or oldest <= y0 or more else oldest
+            print(f"hatch log: new log, rebuilt from {datetime.fromtimestamp(lg['since'], TZ):%d %b %H:%M}")
+        except Exception as e:
+            print("hatch log: deep search failed:", str(e)[:120])
+            lg["since"] = oldest if full else now - 45 * 86400
+    elif full and lg.get("last_ok") and oldest > lg["last_ok"]:  # away too long: newest 60 don't reach back
+        print(f"hatch log: gap since {datetime.fromtimestamp(lg['last_ok'], TZ):%d %b %H:%M}, deep search")
+        try:
+            more, complete = deep_fetch(lg["last_ok"] - 300)
+            lst += more
+            if not complete:
+                lg.setdefault("gaps", []).append([lg["last_ok"], oldest])
+        except Exception as e:
+            print("hatch log: deep search failed:", str(e)[:120])
+            lg.setdefault("gaps", []).append([lg["last_ok"], oldest])
+    new = _merge(lg, lst)
+    lg["last_ok"] = now
+    save_log(lg)
+    if new:
+        print(f"hatch log: +{new} (total {len(lg['hatches'])})")
+    return 0
+
+
+def logged(start, end):
+    """(hatches in [start, end) from the log, note or None). None when there is no usable log."""
+    lg = load_log()
+    if not lg or lg.get("since") is None:
+        return None
+    s, e = start.timestamp(), end.timestamp()
+    if lg["since"] >= e:
+        return None
+    day = [h for h in lg["hatches"].values() if s <= h.get("at", 0) < e]
+    note = None
+    if lg["since"] > s:
+        note = f"counted since {datetime.fromtimestamp(lg['since'], TZ):%H:%M} (hatch log started)"
+    gaps = [g for g in lg.get("gaps", []) if g[0] < e and g[1] > s]
+    if gaps:
+        note = ((note + " · ") if note else "") + "tracker was offline " + ", ".join(
+            f"{datetime.fromtimestamp(a, TZ):%H:%M}-{datetime.fromtimestamp(b, TZ):%H:%M}" for a, b in gaps)
+    return day, note
+
+
 def value_of(h, by_key, by_name):
     """Same lookup as the site's hatch popup: exact variant first, then the pretty name."""
     it = by_key.get(f"P:{h.get('pet')}") or by_name.get(h.get("pretty"))
@@ -122,8 +251,9 @@ def build(hatches, items, start, end, label, partial=False):
     else:
         rar_txt = "  ·  ".join(f"{RARITY_DOT.get(r, WHITE)} {r.title() or 'Other'} {n}"
                                    for r, n in sorted(rar.items(), key=lambda x: -x[1]))
-        lines += [f"\U0001F95A **{len(day)}** hatch{'es' * (len(day) != 1)} on **{len(accts)}** "
-                  f"account{'s' * (len(accts) != 1)}",
+        na = len([u for u in accts if u != "unknown"])  # "unknown" = alerted, but the site no longer lists its account
+        lines += [f"\U0001F95A **{len(day)}** hatch{'es' * (len(day) != 1)} on **{na}** "
+                  f"account{'s' * (na != 1)}",
                   f"\U0001F3AB **{fmt(total)}** total value" + (f"  *(+{unpriced} without a price)*" if unpriced else ""),
                   rar_txt]
         if best:
@@ -136,7 +266,9 @@ def build(hatches, items, start, end, label, partial=False):
             for pet, (n, v, missing) in sorted(a["pets"].items(), key=lambda kv: (-kv[1][1], -kv[1][0])):
                 price = "no price yet" if missing and not v else f"\U0001F3AB {fmt(v)}"
                 lines.append(f" ↳ {n}× {pet} · {price}")
-    if partial:
+    if isinstance(partial, str):
+        lines += ["", f"ℹ️ {partial}"]
+    elif partial:
         lines += ["", f"⚠️ The feed only returns the latest {LIMIT} hatches, so the oldest part of this "
                       "period may be missing."]
 
@@ -182,7 +314,7 @@ def card_data(hatches, items, start, end, label, partial=False):
         pets = sorted(((pn, c, v, icon) for pn, (c, v, icon) in a["pets"].items()), key=lambda x: (-x[2], -x[1]))
         accounts.append({"display": a["display"], "name": a["name"], "uid": a["uid"], "n": a["n"],
                          "value": fmt(a["v"]), "pets": pets})
-    return {"label": label, "total": fmt(total), "n": len(day), "accounts_n": len(accts),
+    return {"label": label, "total": fmt(total), "n": len(day), "accounts_n": len([u for u in accts if u != "unknown"]),
             "rarity": sorted(rar.items(), key=lambda x: -x[1]), "unpriced": unpriced, "partial": partial,
             "best": ({"pretty": best[1].get("pretty"), "icon": best[1].get("icon"), "value": fmt(best[0]),
                       "display": best[1].get("display"), "name": best[1].get("name")} if best else None),
@@ -190,9 +322,22 @@ def card_data(hatches, items, start, end, label, partial=False):
 
 
 def send(start, end, label):
-    hatches, items = fetch()
-    oldest = min((h.get("at", 0) for h in hatches), default=0)
-    partial = len(hatches) >= LIMIT and oldest > start.timestamp()
+    from_log = None
+    try:
+        from_log = logged(start, end)
+    except Exception as e:
+        print("hatch log unreadable, using the feed:", str(e)[:120])
+    if from_log is not None:
+        hatches, partial = from_log
+        try:
+            items = _api_direct("r=values").get("items") or []
+        except Exception:
+            items = _api_browser(["r=values"])[0].get("items") or []
+        print(f"recap from hatch log: {len(hatches)} hatches", f"({partial})" if partial else "")
+    else:  # no log yet: the newest 60 from the feed
+        hatches, items = fetch()
+        oldest = min((h.get("at", 0) for h in hatches), default=0)
+        partial = len(hatches) >= LIMIT and oldest > start.timestamp()
     emb = build(hatches, items, start, end, label, partial)
     print(emb["description"])
     png = None
@@ -212,6 +357,12 @@ def send(start, end, label):
 
 
 # ------------------------------------------------------------------ entry points
+def day_recap(day):
+    """Repost the recap of one finished day (YYYY-MM-DD): only hatches from 00:00 to 24:00 that day."""
+    start = datetime.combine(datetime.fromisoformat(day).date(), datetime.min.time(), TZ)
+    return send(start, start + timedelta(days=1), f"{start:%a %d %b}")
+
+
 def last24():
     """Manual test: the last 24 hours up to now."""
     end = datetime.now(TZ)

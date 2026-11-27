@@ -325,7 +325,9 @@ def build_recap_html(r):
     notes = []
     if r.get("unpriced"):
         notes.append(f'{r["unpriced"]} without a price')
-    if r.get("partial"):
+    if isinstance(r.get("partial"), str):
+        notes.append(r["partial"])
+    elif r.get("partial"):
         notes.append("feed limit reached, oldest may be missing")
     foot_l = " · ".join(notes)
     return f"""<!doctype html><html><head><meta charset="utf-8"><style>{CSS}{RECAP_CSS}</style></head>

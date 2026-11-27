@@ -33,6 +33,8 @@ RUN_FOR = int(float(os.environ.get("RUN_FOR_SECONDS", str(345 * 60))))
 STOP_AT = datetime.fromisoformat(os.environ["STOP_AT"]) if os.environ.get("STOP_AT") else None
 FILES = ["data/seen_hatches.json", track.DB if track else "data/tracker.db",
          recap.STATE if recap else "data/recap_state.json"]
+# (the hatch log is NOT committed: it lists every account, and this repo is public.
+#  The workflow keeps it in GitHub's private Actions cache instead.)
 
 if track and os.environ.get("FLOWER_WEBHOOK_URL"):  # optional: flower reports to another channel
     track.WEBHOOK = os.environ["FLOWER_WEBHOOK_URL"]
@@ -103,6 +105,10 @@ def main():
             code = safe("flower check", track.main)
             save_state("flower snapshot (preview)")
         return code
+    if recap and os.environ.get("RECAP_DAY", "").strip():  # one-time repost of a finished day, then the normal loop
+        safe("hatch log", recap.log_feed)
+        safe(f"recap for {os.environ['RECAP_DAY'].strip()}", lambda: recap.day_recap(os.environ["RECAP_DAY"].strip()))
+        save_state("hatch log")
     if STOP_AT and datetime.now(TZ) >= STOP_AT:
         print("stop time already passed - nothing to do")
         set_output("done", "true")
@@ -131,6 +137,8 @@ def main():
             save_state("flower snapshot")
         if hatch:
             safe("hatch check", hatch.main)
+            if recap:
+                safe("hatch log", recap.log_feed)  # every hatch with its time, for the daily recap
             save_state("seen hatches")
         if recap:
             try:  # quiet: only does something once a day, shortly after midnight
