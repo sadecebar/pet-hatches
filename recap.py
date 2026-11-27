@@ -31,6 +31,7 @@ BROWSER_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
 RARITY_DOT = {"secret": "\U0001F7E3", "exclusive": "\U0001F7E1", "mythical": "\U0001F534",
               "legendary": "\U0001F7E0"}
 WHITE = "⚪"
+PING = os.environ.get("RECAP_PING", "").strip().lower() == "true"  # @ping on the daily recap
 _next_try = 0.0  # throttles retries after a failed recap
 
 
@@ -57,16 +58,20 @@ def _api_browser(queries):
 
 def fetch():
     """Returns (hatches, value_items)."""
-    qs = [f"r=hatches&limit={LIMIT}&kind=pets&q={quote(hatch.QUERY)}", "r=values"]
+    qs = [f"r=hatches&limit={LIMIT}&kind=pets&q={quote(q)}" for q in hatch.QUERIES] + ["r=values"]
     try:
         res = [_api_direct(q) for q in qs]
     except Exception as e:
         print("direct API failed, using browser:", str(e)[:100])
         res = _api_browser(qs)
-    h, v = res
-    if not h.get("ok") or not v.get("ok"):
-        raise RuntimeError(f"API not ok: hatches={h.get('ok')} values={v.get('ok')}")
-    return h.get("list") or [], v.get("items") or []
+    *hs, v = res
+    if not all(h.get("ok") for h in hs) or not v.get("ok"):
+        raise RuntimeError(f"API not ok: hatches={[h.get('ok') for h in hs]} values={v.get('ok')}")
+    got = {}
+    for h in hs:
+        for x in h.get("list") or []:
+            got.setdefault(log_key(x), x)
+    return sorted(got.values(), key=lambda x: -(x.get("at") or 0)), v.get("items") or []
 
 
 # ------------------------------------------------------------------ hatch log
@@ -128,7 +133,7 @@ def deep_fetch(since):
 
     lg = load_log() or {"accounts": []}
     accts = set(lg.get("accounts", []))
-    for extra in [f"q={quote(hatch.QUERY)}"] + [f"q={quote(hatch.QUERY)}&pet={quote(p)}" for p in PETS_SPLIT]:
+    for extra in [f"q={quote(w)}" + (f"&pet={quote(p)}" if p else "") for w in hatch.QUERIES for p in ("",) + PETS_SPLIT]:
         lst = q(extra)
         got += lst
         accts |= {h["name"] for h in lst if h.get("name")}
@@ -148,9 +153,15 @@ def log_feed():
     that the newest 60 don't reach back to the last check, fill the gap with a deep search."""
     now = datetime.now(timezone.utc).timestamp()
     lg = load_log() or {"hatches": {}, "accounts": [], "since": None, "last_ok": None, "gaps": []}
-    lst = _api_direct(f"r=hatches&limit={LIMIT}&kind=pets&q={quote(hatch.QUERY)}").get("list") or []
-    oldest = min((h.get("at", now) for h in lst), default=now)
-    full = len(lst) >= LIMIT
+    lst, oldest, full = [], 0, False
+    for w in hatch.QUERIES:  # each search on its own: the 60 limit applies per search
+        one = _api_direct(f"r=hatches&limit={LIMIT}&kind=pets&q={quote(w)}").get("list") or []
+        lst += one
+        if len(one) >= LIMIT:  # this search is full: how far back it reaches decides the gap check
+            full = True
+            oldest = max(oldest, min(h.get("at", now) for h in one))
+    if not full:
+        oldest = min((h.get("at", now) for h in lst), default=now)
     if lg.get("since") is None:  # first start (no saved log): rebuild from yesterday 00:00 with a deep search
         y0 = datetime.combine((datetime.now(TZ) - timedelta(days=1)).date(), datetime.min.time(), TZ).timestamp()
         try:
@@ -346,12 +357,13 @@ def send(start, end, label):
         png = card.render_html([card.build_recap_html(card_data(hatches, items, start, end, label, partial))])[0]
     except Exception as e:
         print("recap card failed, sending text:", str(e)[:150])
+    head = hatch.ping().strip() if PING else ""
     if png:
         pic = {"title": emb["title"], "color": emb["color"], "image": {"url": "attachment://recap.png"},
                "timestamp": emb["timestamp"]}
-        st = hatch.post("", pic, png, "recap.png")
+        st = hatch.post(head, pic, png, "recap.png")
     else:
-        st = hatch.post("", emb)
+        st = hatch.post(head, emb)
     print("recap discord status", st, "(card)" if png else "(text)")
     return 0
 

@@ -20,6 +20,7 @@
 
 | Date | Update |
 |---|---|
+| **27 Nov 2026** | 👥 **A second tracker for a friend** (`friend.yml`): his own searches, his own @ping on every hatch and on his daily recap, separate from yours. `HATCH_QUERY` can now hold several searches split by `\|`, e.g. `NameA\|NameB` |
 | **27 Nov 2026** | 🤖 **Want your own?** Send the repo link to any AI chatbot and ask it to set it up: there's now a step-by-step guide written for it |
 | **27 Nov 2026** | 📅 The daily recap now counts **every** hatch of the day, however many there are (it used to stop at the site's newest 60) |
 | **26 Nov 2026** | 🃏 **Picture cards**: every hatch alert and the daily recap are now a designed card instead of plain text |

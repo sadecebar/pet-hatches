@@ -31,7 +31,7 @@ TZ = ZoneInfo("Europe/Stockholm")
 POLL = int(os.environ.get("POLL_SECONDS", "60"))
 RUN_FOR = int(float(os.environ.get("RUN_FOR_SECONDS", str(345 * 60))))
 STOP_AT = datetime.fromisoformat(os.environ["STOP_AT"]) if os.environ.get("STOP_AT") else None
-FILES = ["data/seen_hatches.json", track.DB if track else "data/tracker.db",
+FILES = [hatch.SEEN if hatch else "data/seen_hatches.json", track.DB if track else "data/tracker.db",
          recap.STATE if recap else "data/recap_state.json"]
 # (the hatch log is NOT committed: it lists every account, and this repo is public.
 #  The workflow keeps it in GitHub's private Actions cache instead.)

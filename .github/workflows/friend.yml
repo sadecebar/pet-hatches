@@ -1,0 +1,92 @@
+name: friend-hatches
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"   # backup restarter only; the job normally restarts itself
+  workflow_dispatch:
+    inputs:
+      preview:
+        description: "Send a sample hatch alert and stop"
+        type: boolean
+        default: false
+      recap:
+        description: "Post a recap of the last 24 hours now and stop"
+        type: boolean
+        default: false
+      recap_day:
+        description: "Repost the recap of one day (YYYY-MM-DD), then keep tracking"
+        type: string
+        default: ""
+      preview_count:
+        description: "Preview: how many different pets to test (1-10)"
+        type: string
+        default: "1"
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: friend-hatches
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    env:
+      STOP_AT: ""
+      # a second hatch tracker for a friend: own search, own @ping, own memory and recap
+      HATCH_SEEN: "data/seen_hatches_friend.json"
+      RECAP_STATE: "data/recap_state_friend.json"
+      HATCH_LOG: "data/hatch_log_friend.json"
+      RECAP_PING: "true"                 # his daily recap pings him
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check stop time
+        id: gate
+        run: |
+          if [ -n "$STOP_AT" ] && [ "$(date -u +%s)" -ge "$(date -d "$STOP_AT" +%s)" ]; then
+            echo "done=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "done=false" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/setup-python@v5
+        if: steps.gate.outputs.done != 'true'
+        with:
+          python-version: "3.12"
+      - name: Install browser
+        if: steps.gate.outputs.done != 'true'
+        run: pip install playwright && playwright install --with-deps chromium
+      # hatch log (every hatch with its time, for the daily recap). It lists all accounts, so it is
+      # kept in GitHub's private Actions cache, never committed to this public repo.
+      - name: Restore hatch log
+        if: steps.gate.outputs.done != 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: data/hatch_log_friend.json
+          key: friendlog-${{ github.run_id }}
+          restore-keys: friendlog-
+      - name: Run tracker loop
+        id: loop
+        if: steps.gate.outputs.done != 'true'
+        run: python -u runner.py   # -u: log lines appear immediately
+        env:
+          HATCH_QUERY: ${{ secrets.FRIEND_HATCH_QUERY }}          # e.g. Aeranir|Arawn
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          DISCORD_USER_ID: ${{ secrets.FRIEND_DISCORD_USER_ID }}
+          PREVIEW: ${{ inputs.preview }}
+          PREVIEW_COUNT: ${{ inputs.preview_count }}
+          RECAP: ${{ inputs.recap }}
+          RECAP_DAY: ${{ inputs.recap_day }}
+      - name: Save hatch log
+        if: ${{ always() && hashFiles('data/hatch_log_friend.json') != '' }}
+        uses: actions/cache/save@v4
+        with:
+          path: data/hatch_log_friend.json
+          key: friendlog-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Start the next run
+        if: ${{ !cancelled() && inputs.preview != true && inputs.recap != true && steps.gate.outputs.done != 'true' && steps.loop.outputs.done != 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run "${{ github.workflow }}" --ref "${{ github.ref_name }}"

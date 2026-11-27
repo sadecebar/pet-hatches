@@ -6,7 +6,7 @@ before, opens each one for the full details, and posts a Discord embed
 (pet icon + player avatar) that pings you.
 
 Env:
-  HATCH_QUERY          search text (what you type in the page search box)   [required]
+  HATCH_QUERY          search text (what you type in the page search box); several with | ("Aeranir|Arawn")   [required]
   DISCORD_WEBHOOK_URL  Discord webhook (or HATCH_WEBHOOK_URL to use another) [required]
   DISCORD_USER_ID      your Discord user id, used for the @ping              [optional]
 """
@@ -25,6 +25,7 @@ from urllib.parse import quote, urljoin
 
 BASE = "https://petsuniverse.org"
 QUERY = os.environ.get("HATCH_QUERY", "").strip()
+QUERIES = [q.strip() for q in QUERY.split("|") if q.strip()]  # several searches: "Aeranir|Arawn"
 WEBHOOK = os.environ.get("HATCH_WEBHOOK_URL") or os.environ.get("DISCORD_WEBHOOK_URL", "")
 USER_ID = os.environ.get("DISCORD_USER_ID", "").strip()
 SEEN = os.environ.get("HATCH_SEEN", "data/seen_hatches.json")
@@ -274,6 +275,17 @@ def preview_rows(rows):
     return out
 
 def scrape(seen):
+    """All searches together: (rows, details), newest first per search, no duplicates."""
+    rows, details, keys = [], {}, set()
+    for q in QUERIES:
+        r, d = scrape_one(seen, q)
+        rows += [x for x in r if x["key"] not in keys]
+        keys |= {x["key"] for x in r}
+        details.update(d)
+    return rows, details
+
+
+def scrape_one(seen, query):
     """Returns (all_rows, details_for_new) where details is {key: modal_dict}."""
     from playwright.sync_api import sync_playwright
     os.makedirs("data", exist_ok=True)
@@ -281,7 +293,7 @@ def scrape(seen):
         b = p.chromium.launch()
         ctx = b.new_context(viewport={"width": 430, "height": 1800}, timezone_id="Europe/Stockholm")
         pg = ctx.new_page()
-        pg.goto(f"{BASE}/hatches?q={quote(QUERY)}", wait_until="networkidle", timeout=60000)
+        pg.goto(f"{BASE}/hatches?q={quote(query)}", wait_until="networkidle", timeout=60000)
         pg.wait_for_timeout(3000)
         raw = pg.evaluate(ROWS_JS)
         rows = [r for r in (parse_row(d) for d in raw) if r]
@@ -466,7 +478,9 @@ def make_cards(rs, details):
     try:
         import card
         try:
-            api = card.api_hatches(QUERY)
+            api = {}
+            for q in QUERIES:
+                api.update(card.api_hatches(q))
         except Exception as e:
             print("hatch API failed (odds/luck left out):", str(e)[:100])
             api = {}
